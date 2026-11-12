@@ -4,4 +4,7 @@ __pycache__/
 tests/saida/
 dados_brutos.json
 dados_brutos.json.tmp
+dados_brutos.corrompido-*.json
+backups/
+config_painel.json
 ultimo_log.txt

@@ -670,11 +670,15 @@ box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:.82rem}
 #tip .th{font:900 .8rem var(--titulo);text-transform:uppercase;margin-bottom:5px;color:var(--roxo2)}
 #tip .tr{display:flex;justify-content:space-between;gap:14px}
 #tip .tv{font-family:var(--mono);font-weight:700;text-align:right;white-space:nowrap}
+.faixa{display:flex;gap:10px;align-items:flex-start;margin-top:16px;padding:12px 16px;border-radius:14px;
+border:1px solid var(--ouro);background:rgba(255,210,63,.08);color:var(--tx);font-size:.9rem}
+.faixa[hidden]{display:none}
+.faixa b{color:var(--ouro);font-family:var(--titulo);text-transform:uppercase;font-size:.78rem;letter-spacing:.04em;white-space:nowrap}
 @media print{
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
 --roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
 html,body{background:#fff!important;background-image:none!important}
-.seletor,.barra,#tip{display:none!important}
+.seletor,.barra,#tip,#velho{display:none!important}
 .card,.kpi,.tw{break-inside:avoid;box-shadow:none}
 .tw{overflow:visible}main{max-width:none;padding:0}
 .ch .hit{display:none}
@@ -723,6 +727,18 @@ document.querySelectorAll('.seletor button').forEach(function(b){
   b.addEventListener('click',function(){periodo(+b.getAttribute('data-n'));});});
 periodo(+corpo.getAttribute('data-n'));
 
+// faixa de "dados velhos": compara a hora da última atualização com a hora de agora
+(function(){
+  var v=document.getElementById('velho'),g=corpo.getAttribute('data-gerado');
+  if(!v||!g)return;
+  var t=new Date(g).getTime();if(isNaN(t))return;
+  var h=(Date.now()-t)/3600000;
+  if(h<13)return;
+  var d=Math.floor(h/24),hh=Math.floor(h%24),txt=d>0?d+(d===1?' dia':' dias')+(hh?' e '+hh+' h':''):Math.floor(h)+' h';
+  v.querySelector('span').textContent='Os dados deste painel foram atualizados há '+txt+'. Use atualizar.bat para buscar dados novos (a atualização automática roda a cada 6 horas, se estiver ligada).';
+  v.hidden=false;
+})();
+
 // ordenar tabelas
 function valor(td){var v=td.getAttribute('data-v');
   if(v!==null){return v===''?null:(/^-?[0-9]+(\\.[0-9]+)?$/.test(v)?parseFloat(v):v);}
@@ -759,8 +775,11 @@ document.querySelectorAll('button.csv').forEach(function(b){
 """
 
 
-def pagina(dias, atividades, ini, fim, agora, avisos=None):
-    """Devolve (html, nomes_dos_gráficos_omitidos)."""
+def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None):
+    """Devolve (html, nomes_dos_gráficos_omitidos).
+
+    alertas: faixas de destaque no topo (ex.: chave perto de vencer).
+    chave_vence: data de vencimento da chave, só informativa, no rodapé."""
     hoje = fim
     sem0 = segunda(hoje)
     disponiveis = (fim - ini).days + 1
@@ -833,6 +852,12 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None):
     if not melhores:
         omitidos.append("Melhores esforços")
 
+    faixas = "".join(f'<div class="faixa" role="alert"><b>Atenção</b><span>{esc(a)}</span></div>'
+                     for a in (alertas or []))
+    faixas += ('<div class="faixa" id="velho" role="status" hidden><b>Dados antigos</b>'
+               '<span></span></div>')
+    rodape_chave = (f" A chave da Garmin vence em {chave_vence.strftime('%d/%m/%Y')}."
+                    if chave_vence else "")
     aviso_html = ""
     if omitidos or avisos:
         itens = [f"“{n}” omitido: a Garmin não enviou esse dado no período." for n in omitidos] \
@@ -847,11 +872,12 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None):
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Painel Garmin</title><style>{CSS}{regras}</style></head>
-<body data-n="{padrao}" data-hoje="{hoje.isoformat()}"><main>
+<body data-n="{padrao}" data-hoje="{hoje.isoformat()}" data-gerado="{agora.strftime('%Y-%m-%dT%H:%M:%S')}"><main>
 <div class="top"><h1>Painel Garmin</h1>
 <p class="sub">Período: {ini.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')} ·
 atualizado em {agora.strftime('%d/%m/%Y %H:%M')}</p></div>
 
+{faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
 <span>Período:</span>{botoes}</div>
@@ -869,5 +895,5 @@ aparece na data em que você acordou. A média semanal do sono usa todas as noit
 da semana (segunda a domingo). Pace e porcentagens são contas feitas com a distância e o
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida. “Descanso” = nenhuma atividade
-registrada naquele dia. Clique no título de uma coluna para ordenar.</p>
+registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
 </main><div id="tip"></div><script>{JS}</script></body></html>""", omitidos

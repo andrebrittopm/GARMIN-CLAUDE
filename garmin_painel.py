@@ -18,6 +18,8 @@ Uso:
     python garmin_painel.py --dias 60          # período maior (padrão 30)
     python garmin_painel.py --sem-abrir        # não abre o navegador
     python garmin_painel.py --esquecer-token   # apaga o token guardado no cofre
+    python garmin_painel.py --diagnostico      # confere tudo e diz o que está errado
+    python garmin_painel.py --chave-vence 2027-02-09   # avisa antes da chave vencer
 """
 import argparse
 import base64
@@ -34,6 +36,8 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
+import configuracao  # noqa: E402
+import diagnostico  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
                    ler_chave, ler_token_cache)
 from formatos import (MELHORES, SEM_DADO, hms, km, pace,  # noqa: E402
@@ -385,6 +389,10 @@ def atualizar_armazem(cli, dados, hoje, ini):
               f"VFC: {len(vfc)} - atividades: {len(ativ)}")
     armazem.fechar(dados, hoje, ini)
     try:
+        armazem.backup_diario(caminho_armazem())   # cópia do arquivo ANTES de mudar
+    except OSError:
+        avisos.append("Não consegui fazer a cópia de segurança dos dados guardados")
+    try:
         armazem.salvar(caminho_armazem(), dados)
     except OSError as e:
         avisos.append("Não consegui guardar os dados em dados_brutos.json "
@@ -396,8 +404,11 @@ def atualizar_armazem(cli, dados, hoje, ini):
 def gerar(dados, hoje, ini, agora, avisos, abrir):
     resumos, sonos, vfc, brutas = armazem.recorte(dados, ini, hoje)
     ativ = montar_atividades(brutas)
+    alerta = configuracao.alerta(pasta_dados())
+    venc = configuracao.vencimento(pasta_dados())
     pag, omitidos = pagina(montar_dias(resumos, sonos, vfc), ativ, ini, hoje,
-                           agora, avisos)
+                           agora, avisos, [alerta] if alerta else None,
+                           venc[0] if venc else None)
     caminho = os.path.join(pasta_dados(), "painel.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(pag)
@@ -407,6 +418,8 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
               "(o relógio não mediu ou a Garmin não enviou).")
     for a in avisos:
         print(f"AVISO: {a}")
+    if alerta:
+        print(f"AVISO: {alerta}")
     if abrir:
         webbrowser.open("file:///" + caminho.replace("\\", "/"))
 
@@ -432,12 +445,27 @@ def main(argv=None):
     p.add_argument("--pasta-dados", metavar="PASTA",
                    help="onde guardar painel.html e dados_brutos.json (útil para "
                         "fora de pastas sincronizadas, como o OneDrive)")
+    p.add_argument("--diagnostico", action="store_true",
+                   help="confere chave, token, conexão, dados e agendamento")
+    p.add_argument("--chave-vence", metavar="DATA",
+                   help="data em que a chave vence (AAAA-MM-DD), para o painel avisar antes")
     p.add_argument("--esquecer-token", action="store_true",
                    help="apaga o token guardado no cofre do Windows")
     a = p.parse_args(argv)
     global PASTA_DADOS
     PASTA_DADOS = a.pasta_dados
     try:
+        if a.diagnostico:
+            return diagnostico.executar()
+        if a.chave_vence:
+            try:
+                data = configuracao.definir_vencimento(pasta_dados(), a.chave_vence)
+            except ValueError as e:
+                raise Erro(str(e)) from None
+            dias = (data - dt.date.today()).days
+            print(f"Vencimento da chave registrado: {data.strftime('%d/%m/%Y')} "
+                  f"({'faltam ' + str(dias) + ' dias' if dias >= 0 else 'já venceu'}).")
+            return 0
         if a.esquecer_token:
             apagar_token_cache()
             print("Token guardado apagado do cofre (se existia). "

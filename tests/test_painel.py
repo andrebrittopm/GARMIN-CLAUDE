@@ -67,6 +67,7 @@ class H(BaseHTTPRequestHandler):
         METODOS.append(("GET", self.path))
         if self.headers.get("Authorization") != "Bearer " + TOKEN_FALSO: return self._json({}, 401)
         u = urllib.parse.urlparse(self.path); q = dict(urllib.parse.parse_qsl(u.query)); p = u.path
+        if "userprofile/settings" in p: return self._json({"x": 1})
         if "dailysummaries" in p: return self._json({"data": [resumo(x) for x in rng(q["startDate"], q["endDate"])]})
         if "dailySleep" in p: return self._json([sono(x) for x in rng(q["startDate"], q["endDate"])])
         if "/hrv-service/hrv/daily/" in p:
@@ -109,9 +110,10 @@ def n_get(trecho): return sum(1 for m, p in METODOS if m == "GET" and trecho in 
 def painel(): return open(os.path.join(gp.PASTA, "painel.html"), encoding="utf-8").read()
 
 if __name__ == "__main__":
-    for f in ("dados_brutos.json", "painel.html"):
-        try: os.remove(os.path.join(gp.PASTA, f))
-        except FileNotFoundError: pass
+    import shutil
+    for f in os.listdir(gp.PASTA):                       # começa de uma pasta limpa
+        p_ = os.path.join(gp.PASTA, f)
+        shutil.rmtree(p_) if os.path.isdir(p_) else os.remove(p_)
 
     # 0) teste de 1 dia
     rc, out = rodar(["--teste", "--data", d(1).isoformat()]); assert rc == 0, out
@@ -202,6 +204,60 @@ if __name__ == "__main__":
     rc, out = rodar(["--sem-abrir", "--pasta-dados", alvo]); assert rc == 0, out
     assert sorted(os.listdir(alvo)) == ["dados_brutos.json", "painel.html"]
     gp.PASTA_DADOS = None
+
+    # 15) --diagnostico: tudo OK, sem segredos na saída
+    import configuracao
+    COFRE.clear()
+    rc, out = rodar(["--diagnostico"]); print(out)
+    assert rc == 0 and "[OK]" in out and "[FALHA]" not in out, out
+    assert CHAVE_FALSA not in out and TOKEN_FALSO not in out
+    assert "Conexão e autenticação com a Garmin funcionando" in out
+    assert "Data de vencimento da chave não informada" in out          # ainda não informada
+    gp.ler_chave_orig = gp.ler_chave
+    def sem_chave(): raise gp.ErroCofre("Não achei a chave no cofre (teste).")
+    gp.ler_chave = sem_chave
+    rc, out = rodar(["--diagnostico"]); gp.ler_chave = gp.ler_chave_orig
+    assert rc == 1 and "[FALHA]" in out and "Não achei a chave" in out
+
+    # 16) --chave-vence: aviso em 14 dias, vencida, e data inválida
+    prox = (HOJE + dt.timedelta(days=9)).isoformat()
+    rc, out = rodar(["--chave-vence", prox]); assert rc == 0 and "faltam 9 dias" in out, out
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0 and "vence em 9 dias" in out, out
+    pg = painel(); assert 'class="faixa" role="alert"' in pg and "vence em 9 dias" in pg
+    rc, out = rodar(["--chave-vence", (HOJE - dt.timedelta(days=2)).strftime("%d/%m/%Y")]); assert rc == 0 and "já venceu" in out
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert "venceu em" in painel()
+    rc, out = rodar(["--chave-vence", (HOJE + dt.timedelta(days=60)).isoformat()]); assert rc == 0
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert 'role="alert"' not in painel() and "A chave da Garmin vence em" in painel()
+    rc, out = rodar(["--chave-vence", "31/02/2027"]); assert rc == 1 and "Data inválida" in out
+
+    # 17) backup diário: 1 por dia, mantém 5; só copia arquivo íntegro
+    cam = os.path.join(gp.PASTA, "dados_brutos.json")
+    bdir = os.path.join(gp.PASTA, "backups")
+    import shutil; shutil.rmtree(bdir, ignore_errors=True)
+    for i in range(8, 0, -1):                                   # 8 dias antigos
+        os.makedirs(bdir, exist_ok=True)
+        shutil.copy2(cam, os.path.join(bdir, f"dados_brutos-{(HOJE - dt.timedelta(days=i + 1)).isoformat()}.json"))
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0, out
+    nomes = sorted(os.listdir(bdir)); assert len(nomes) == 5 and nomes[-1] == f"dados_brutos-{HOJE.isoformat()}.json", nomes
+    rc, out = rodar(["--sem-abrir"]); assert sorted(os.listdir(bdir)) == nomes, "só 1 backup por dia"
+
+    # 18) arquivo de dados corrompido: não é apagado, é separado, e o programa recomeça
+    open(cam, "w").write("{isto não é json")
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0 and "foi separado em" in out, out
+    assert any(".corrompido-" in n for n in os.listdir(gp.PASTA))
+    assert armazem.carregar(cam)["atividades"], "armazém refeito"
+    assert armazem.backup_diario(cam, hoje=HOJE + dt.timedelta(days=1)) is not None
+    open(cam, "w").write("{lixo"); assert armazem.backup_diario(cam, hoje=HOJE + dt.timedelta(days=2)) is None, "não copia arquivo ruim"
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0
+    for n in os.listdir(gp.PASTA):
+        if ".corrompido-" in n: os.remove(os.path.join(gp.PASTA, n))
+
+    # 19) faixa de dados antigos (o navegador decide pela hora): guarda a hora no armazém
+    st = armazem.carregar(cam); st["atualizado_em"] = (dt.datetime.now() - dt.timedelta(days=2, hours=3)).isoformat(timespec="seconds")
+    armazem.salvar(cam, st)
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0, out
+    assert 'id="velho"' in painel() and 'data-gerado="' in painel()
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)

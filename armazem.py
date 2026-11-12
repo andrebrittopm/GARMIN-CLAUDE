@@ -7,8 +7,10 @@ Guarda a resposta da Garmin como veio, por data, para:
 O arquivo tem dados de saúde: fica só no seu computador (fora do GitHub).
 """
 import datetime as dt
+import glob
 import json
 import os
+import shutil
 import time
 
 VERSAO = 1
@@ -21,15 +23,69 @@ def vazio():
             "resumos": {}, "sonos": {}, "vfc": {}, "atividades": {}}
 
 
+def _valido(d):
+    return (isinstance(d, dict) and d.get("versao") == VERSAO
+            and isinstance(d.get("resumos"), dict)
+            and isinstance(d.get("sonos"), dict)
+            and isinstance(d.get("vfc"), dict)
+            and isinstance(d.get("atividades"), dict))
+
+
 def carregar(caminho):
+    """Lê o armazém. Arquivo ausente = vazio. Arquivo ilegível NÃO é apagado:
+    é renomeado para dados_brutos.corrompido-<data>.json, para não perder
+    histórico por engano, e o programa recomeça com um armazém novo."""
     try:
         with open(caminho, encoding="utf-8") as f:
             d = json.load(f)
-        if d.get("versao") == VERSAO and isinstance(d.get("resumos"), dict):
+        if _valido(d):
             return d
+        motivo = "formato desconhecido"
+    except FileNotFoundError:
+        return vazio()
     except (OSError, ValueError):
-        pass
+        motivo = "arquivo ilegível"
+    destino = f"{caminho[:-5] if caminho.endswith('.json') else caminho}" \
+              f".corrompido-{dt.datetime.now():%Y%m%d-%H%M%S}.json"
+    try:
+        os.replace(caminho, destino)
+        print(f"AVISO: o arquivo de dados guardados estava com problema ({motivo}); "
+              f"foi separado em {os.path.basename(destino)} e a busca recomeça do zero.")
+    except OSError:
+        print(f"AVISO: o arquivo de dados guardados está com problema ({motivo}).")
     return vazio()
+
+
+def backup_diario(caminho, manter=5, hoje=None):
+    """Uma cópia por dia em backups/, guardando só as últimas `manter`.
+    Só copia se o arquivo atual está íntegro. Devolve o caminho criado ou None."""
+    if not os.path.exists(caminho):
+        return None
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            if not _valido(json.load(f)):
+                return None
+    except (OSError, ValueError):
+        return None
+    pasta = os.path.join(os.path.dirname(os.path.abspath(caminho)), "backups")
+    os.makedirs(pasta, exist_ok=True)
+    nome = f"dados_brutos-{(hoje or dt.date.today()).isoformat()}.json"
+    destino, criado = os.path.join(pasta, nome), None
+    if not os.path.exists(destino):
+        shutil.copy2(caminho, destino)
+        criado = destino
+    antigos = sorted(glob.glob(os.path.join(pasta, "dados_brutos-*.json")))
+    for velho in antigos[:-manter] if manter > 0 else antigos:
+        try:
+            os.remove(velho)
+        except OSError:
+            pass
+    return criado
+
+
+def listar_backups(caminho):
+    pasta = os.path.join(os.path.dirname(os.path.abspath(caminho)), "backups")
+    return sorted(glob.glob(os.path.join(pasta, "dados_brutos-*.json")))
 
 
 def salvar(caminho, dados, tentativas=4):

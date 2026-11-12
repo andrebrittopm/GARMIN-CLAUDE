@@ -1,0 +1,36 @@
+name: testes
+
+# Roda os testes automáticos a cada envio ao GitHub. Não usa chave, conta nem
+# nenhum segredo: os testes falam com um servidor falso criado na hora.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    name: Testes (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Testes com servidor falso
+        run: python tests/test_painel.py
+
+  cofre-windows:
+    # O cofre do Windows só existe no Windows. Se este teste falhar por limitação
+    # do ambiente do GitHub, ele avisa mas não reprova o conjunto.
+    name: Cofre do Windows (real)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Gravar, ler e apagar uma credencial de teste
+        run: python tests/test_cofre_windows.py
