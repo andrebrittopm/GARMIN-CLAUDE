@@ -9,8 +9,8 @@ import datetime as dt
 import html
 import math
 
-from arte import (arte_topo, arte_topo_real, foto_exemplo, rota_real_svg,
-                  rotas_sobrepostas_svg, selo_iniciais)
+from arte import (arte_topo, arte_topo_real, foto_exemplo, perfil_elevacao_svg,
+                  rota_real_svg, rotas_sobrepostas_svg, selo_iniciais)
 import rotas as rotas_mod
 from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, comparar_semanas, cor_esporte, data_br,
                       grupo, hcurto, hm, hms, km, minutos, num, pace,
@@ -710,7 +710,7 @@ def card_prova_proxima(p):
             f'<span>{"" if n == 0 else ("dia" if n == 1 else "dias")}</span></div></article>')
 
 
-def card_prova_feita(p):
+def card_prova_feita(p, minis=None):
     a = p.get("atv")
     if p.get("dist_km"):
         dist = _dist_txt(p["dist_km"]).upper()
@@ -724,11 +724,14 @@ def card_prova_feita(p):
     else:
         tempo = ritmo = SEM_DADO
         real = ""
+    aid = str(a["id"]) if a and a.get("id") is not None else None
+    mini = (f'<button type="button" class="mini" data-det="{aid}" aria-label="Ver o percurso desta prova">{minis[aid]}</button>'
+            if aid and minis and aid in minis else "")
     return (f'<article class="bib feita"><div class="furos"></div>{_logo(p)}'
             f'<div class="corpo"><span class="tag ok">{tag}</span><h3>{esc(p["nome"])}</h3>'
             f'<p>{_data_curta(p["data"])}</p></div>'
             f'<dl class="num"><div><dt>Tempo</dt><dd>{esc(tempo)}</dd></div>'
-            f'<div><dt>Pace</dt><dd>{esc(ritmo)}</dd></div>{real}</dl></article>')
+            f'<div><dt>Pace</dt><dd>{esc(ritmo)}</dd></div>{real}</dl>{mini}</article>')
 
 
 def hero_html(co, agora, rotas_xy=None):
@@ -754,21 +757,50 @@ def hero_html(co, agora, rotas_xy=None):
             f'<div class="hero-stats">{hs}</div></div></header>')
 
 
-def secao_rotas(info):
-    """Galeria das últimas rotas + mapa de todas sobrepostas. info vem de
-    garmin_painel.preparar_rotas (rotas já com o começo e o fim cortados)."""
+def _st(rotulo, valor):
+    return (f'<div class="det-st"><div class="r">{esc(rotulo)}</div>'
+            f'<div class="v{" sd" if valor == SEM_DADO else ""}">{esc(valor)}</div></div>')
+
+
+def detalhe_html(it, priv):
+    """Conteúdo da janela de detalhe de UMA corrida (números da Garmin)."""
+    alt = it.get("alt") or []
+    faixa = (f"{round(min(p[1] for p in alt))}–{round(max(p[1] for p in alt))} m" if alt else SEM_DADO)
+    stats = [("Distância", km(it["dist_m"])), ("Tempo", hms(it["dur_s"])),
+             ("Pace", pace(pace_de_velocidade(it["vel_ms"]))),
+             ("FC média", f'{num(it["fc_media"])} bpm' if it.get("fc_media") else SEM_DADO),
+             ("Cadência", f'{num(it["cad"])} ppm' if it.get("cad") else SEM_DADO),
+             ("Ganho de elevação", f'{num(it["elev_m"])} m' if it.get("elev_m") is not None else SEM_DADO),
+             ("Altitude mín–máx", faixa),
+             ("VO2máx", num(it["vo2"]) if it.get("vo2") else SEM_DADO)]
+    mapa = rota_real_svg(rotas_mod.projetar(it["pts"]), "d" + str(it["id"]), 420, 300,
+                         rotulo="Rota de " + data_br(it["data"]))
+    perfil = perfil_elevacao_svg(alt)
+    perfil_html = (f'<h3 class="det-h">Perfil de elevação</h3>{perfil}' if perfil else
+                   '<p class="sd">Perfil de elevação: sem dado (será baixado nas próximas atualizações).</p>')
+    nota = (f"o começo e o fim ficam ocultos (primeiros e últimos {priv} m)" if priv
+            else "atenção: sem corte de privacidade")
+    return (f'<div class="det-grid">{"".join(_st(r, v_) for r, v_ in stats)}</div>'
+            f'<div class="det-mapa">{mapa}<p class="sub">{esc(nota)}</p></div>{perfil_html}')
+
+
+def secao_rotas(info, ids_extra=()):
+    """Galeria das últimas rotas + mapa de todas sobrepostas + janelas de detalhe.
+    Devolve (html, rotas_xy_do_topo, templates_html, minis{id: svg})."""
     itens = info["itens"] if info else []
     if not itens:
-        return "", []
+        return "", [], "", {}
     priv = info["privacidade_m"]
     nota_priv = (f"o começo e o fim de cada rota ficam ocultos (primeiros e últimos {priv} m)" if priv
                  else "atenção: sem corte de privacidade, o início e o fim aparecem")
+    com_detalhe = {it["id"] for it in itens[-60:]} | {i for i in ids_extra if any(it["id"] == i for it in itens)}
     cards = []
     for it in reversed(itens[-12:]):
         pc = pace(pace_de_velocidade(it["vel_ms"]))
         t = tip(data_br(it["data"]), f"Distância|{km(it['dist_m'])}", f"Tempo|{hms(it['dur_s'])}", f"Pace|{pc}")
         cards.append(
-            f'<div class="rota" data-tip="{esc(t)}">'
+            f'<div class="rota" data-tip="{esc(t)}" data-det="{it["id"]}" tabindex="0" role="button" '
+            f'aria-label="Ver detalhes da corrida de {esc(data_br(it["data"]))}">'
             f'{rota_real_svg(rotas_mod.projetar(it["pts"]), "r" + str(it["id"]), rotulo="Rota de " + data_br(it["data"]))}'
             f'<div class="cap"><span>{esc(data_br(it["data"]))}</span><b>{esc(km(it["dist_m"]))}</b>'
             f'<span class="mut">{esc(pc)}</span></div></div>')
@@ -778,23 +810,30 @@ def secao_rotas(info):
     nota_fora = (f" · {fora} corrida{'s' if fora != 1 else ''} em outra região não entra neste mapa"
                  if fora else "")
     sec = (cartao("Meus percursos",
-                  f"as {min(len(itens), 12)} corridas mais recentes com trilha · {nota_priv}",
+                  f"as {min(len(itens), 12)} corridas mais recentes com trilha · clique numa rota para ver o detalhe · {nota_priv}",
                   f'<div class="galeria">{"".join(cards)}</div>')
            + cartao("Todas as minhas rotas",
                     f"{len(idx)} corridas sobrepostas, na mesma escala: onde mais passei fica mais intenso; "
                     f"as mais recentes são mais claras{nota_fora} · sem mapa de fundo, nada é enviado a ninguém",
                     f'<div class="mapa">{rotas_sobrepostas_svg(xy)}</div>'))
-    return sec, [rotas_mod.projetar(itens[i]["pts"]) for i in range(len(itens) - 1, max(len(itens) - 10, -1), -1)]
+    templates = "".join(
+        f'<template id="det-{it["id"]}" data-titulo="{esc(data_br(it["data"]) + " — " + (it.get("nome") or "Corrida"))}">'
+        f'{detalhe_html(it, priv)}</template>' for it in itens if it["id"] in com_detalhe)
+    minis = {it["id"]: rota_real_svg(rotas_mod.projetar(it["pts"]), "m" + str(it["id"]), 300, 90,
+                                     rotulo="Rota da prova")
+             for it in itens if it["id"] in ids_extra}
+    hero_xy = [rotas_mod.projetar(itens[i]["pts"]) for i in range(len(itens) - 1, max(len(itens) - 10, -1), -1)]
+    return sec, hero_xy, templates, minis
 
 
-def provas_html(co):
+def provas_html(co, minis=None):
     out = ""
     if co["proximas"]:
         out += ('<h2 class="t">Próximas provas</h2><div class="provas">'
                 + "".join(card_prova_proxima(p) for p in co["proximas"]) + "</div>")
     if co["feitas"]:
         out += ('<h2 class="t">Provas que já corri</h2><div class="provas">'
-                + "".join(card_prova_feita(p) for p in co["feitas"]) + "</div>"
+                + "".join(card_prova_feita(p, minis) for p in co["feitas"]) + "</div>"
                 '<p class="sub" style="margin-top:8px">Tempo, pace e distância vêm da atividade da Garmin '
                 'no dia da prova; podem diferir do tempo oficial da organização.</p>')
     return out
@@ -1005,12 +1044,27 @@ border:1px solid var(--bd);border-radius:10px;padding:9px 11px}
 .ed-aviso{color:var(--ouro);font-size:.85rem}
 .ed-dica{color:var(--mut);font-size:.8rem}
 .ed-sec{margin:18px 0 4px;font:900 .8rem var(--titulo);text-transform:uppercase;font-style:italic;color:var(--roxo2)}
+
+.bib.feita{grid-template-columns:auto 1fr}
+.bib .mini{grid-column:1/-1;width:100%;height:96px;margin-top:6px;padding:4px;border:1px solid rgba(26,20,38,.25);border-radius:12px;background:#150f26;cursor:pointer}
+.bib .mini svg{width:100%;height:100%;display:block}.bib .mini:hover{border-color:var(--roxo)}
+.rota[data-det]{cursor:pointer}.rota[data-det]:focus-visible{outline:2px solid var(--roxo2);outline-offset:2px}
+dialog#detalhe{width:min(940px,96vw);max-height:92vh;padding:0;border:1px solid var(--roxo2);border-radius:20px;background:#150f26;color:var(--tx);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+dialog#detalhe::backdrop{background:rgba(5,3,12,.78)}
+.det-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:6px 0 14px}
+.det-st{background:rgba(11,8,19,.5);border:1px solid var(--bd);border-radius:12px;padding:8px 12px}
+.det-st .r{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.07em}
+.det-st .v{font:700 1.1rem var(--mono);font-variant-numeric:tabular-nums}
+.det-mapa{background:#0d0918;border:1px solid var(--bd);border-radius:16px;padding:10px;margin-bottom:14px;text-align:center}
+.det-mapa svg{width:min(100%,340px);height:auto}
+.det-mapa .sub{margin:4px 0 0}
+.det-h{font:900 .8rem var(--titulo);text-transform:uppercase;font-style:italic;color:var(--roxo2);margin:10px 0 4px}
 @media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
 @media print{
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
 --roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
 html,body{background:#fff!important;background-image:none!important}
-.seletor,.barra,#tip,#velho,#atu-status,dialog#editor{display:none!important}
+.seletor,.barra,#tip,#velho,#atu-status,dialog#editor,dialog#detalhe{display:none!important}
 .card,.kpi,.tw{break-inside:avoid;box-shadow:none}
 .tw{overflow:visible}main{max-width:none;padding:0}
 .ch .hit{display:none}
@@ -1238,6 +1292,23 @@ btn.addEventListener('click',function(){if(!cfg){ajuda();return;}dlg.showModal()
 })();
 """
 
+DETALHE_JS = """
+(function(){
+var dlg=document.getElementById('detalhe');if(!dlg||!dlg.showModal)return;
+var cont=document.getElementById('det-conteudo'),tit=document.getElementById('det-t'),tip=document.getElementById('tip');
+function abrir(id){var t=document.getElementById('det-'+id);if(!t)return;cont.textContent='';
+  cont.appendChild(t.content.cloneNode(true));tit.textContent=t.getAttribute('data-titulo')||'';
+  if(tip)dlg.appendChild(tip);dlg.showModal();}
+dlg.addEventListener('close',function(){if(tip){document.body.appendChild(tip);tip.style.display='none';}});
+dlg.addEventListener('click',function(e){if(e.target===dlg)dlg.close();});
+dlg.querySelector('.det-fechar').addEventListener('click',function(){dlg.close();});
+document.addEventListener('click',function(e){var el=e.target.closest&&e.target.closest('[data-det]');
+  if(el&&!dlg.open)abrir(el.getAttribute('data-det'));});
+document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('[data-det]')){
+  e.preventDefault();if(!dlg.open)abrir(e.target.getAttribute('data-det'));}});
+})();
+"""
+
 
 def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
            historico=None, metas=None, cobertura_ini=None, corredor=None, rotas=None):
@@ -1271,9 +1342,11 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     blocos.append(cartao("Esta semana × semana passada × média",
                          "corridas · números da Garmin",
                          card_comparacao(comparar_semanas(atividades, hoje, ini))))
+    ids_prova = {str(p["atv"]["id"]) for p in (corredor["feitas"] if corredor else [])
+                 if p.get("atv") and p["atv"].get("id") is not None}
+    secao_r, hero_xy, templates, minis = secao_rotas(rotas, ids_prova)
     if corredor and (corredor["proximas"] or corredor["feitas"]):
-        blocos.append(provas_html(corredor))
-    secao_r, hero_xy = secao_rotas(rotas)
+        blocos.append(provas_html(corredor, minis))
     if secao_r:
         blocos.append(secao_r)
     blocos.append(cartao("Tempo por esporte — semana atual",
@@ -1358,6 +1431,9 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
             + list(avisos or [])
         aviso_html = '<p class="nota">' + " ".join(esc(i) for i in itens) + "</p>"
 
+    detalhe_dialog = ('<dialog id="detalhe" aria-labelledby="det-t"><div class="ed-box"><div class="ed-top">'
+                      '<h2 id="det-t"></h2><button type="button" class="ed-btn det-fechar">Fechar</button></div>'
+                      '<div id="det-conteudo"></div></div></dialog>' + templates) if templates else ""
     botoes = "".join(f'<button type="button" data-n="{n}" aria-pressed="{"true" if n == padrao else "false"}">{n} dias</button>'
                      for n in opcoes)
     regras = "".join(f'body[data-n="{n}"] .per[data-n="{n}"]{{display:block}}' for n in opcoes)
@@ -1390,4 +1466,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main><div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script></body></html>""", omitidos
+</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script></body></html>""", omitidos

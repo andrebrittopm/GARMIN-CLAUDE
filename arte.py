@@ -159,3 +159,63 @@ def arte_topo_real(lista_xy, w=1200, h=300):
     faixas = "".join(f'<path d="M-50,{h - 20 + k * 14} Q {w / 2},{h - 140 + k * 22} {w + 50},{h - 20 + k * 14}" '
                      f'fill="none" stroke="#C4B5FD" stroke-width="1" opacity="{.22 - k * .03:.2f}"/>' for k in range(5))
     return f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">{"".join(ps)}{faixas}</svg>'
+
+
+def _marcas(lo, hi, alvos=4):
+    """Marcas redondas de eixo entre lo e hi."""
+    if hi <= lo:
+        hi = lo + 1
+    bruto = (hi - lo) / alvos
+    mag = 10 ** math.floor(math.log10(bruto))
+    passo = next((m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= bruto), mag * 10)
+    t = math.floor(lo / passo) * passo
+    out = []
+    while t <= hi + passo * 1e-6:
+        if t >= lo - 1e-9:
+            out.append(t)
+        t += passo
+    return out
+
+
+def perfil_elevacao_svg(pts, w=860, h=230):
+    """Altitude (m) ao longo da corrida (km). pts: [[distância_m, altitude_m], ...].
+    Só números do arquivo da Garmin; passe o mouse para ver cada ponto."""
+    if len(pts) < 2:
+        return ""
+    pl, pr, pt, pb = 46, 14, 12, 30
+    ds = [p[0] for p in pts]
+    als = [p[1] for p in pts]
+    dmax = (max(ds) or 1)
+    lo, hi = min(als), max(als)
+    pad = max((hi - lo) * 0.15, 3)
+    lo, hi = lo - pad, hi + pad
+    X = lambda d: pl + (w - pl - pr) * d / dmax            # noqa: E731
+    Y = lambda v: pt + (h - pt - pb) * (1 - (v - lo) / (hi - lo))   # noqa: E731
+    out = []
+    for t in _marcas(lo, hi):
+        y = Y(t)
+        out.append(f'<line class="gl" x1="{pl}" x2="{w - pr}" y1="{y:.1f}" y2="{y:.1f}"/>'
+                   f'<text class="yl" x="{pl - 6}" y="{y + 4:.1f}" text-anchor="end">{t:g}</text>')
+    km_max = dmax / 1000
+    passo_km = next((s for s in (0.5, 1, 2, 5, 10, 20) if km_max / s <= 8), 20)
+    k = 0.0
+    while k <= km_max + 1e-6:
+        x = X(k * 1000)
+        out.append(f'<text class="xl" x="{x:.1f}" y="{h - 10}" text-anchor="middle">{str(round(k, 1)).replace(".", ",")} km</text>')
+        k += passo_km
+    linha = " L".join(f"{X(d):.1f},{Y(v):.1f}" for d, v in pts)
+    base = pt + (h - pt - pb)
+    out.append(f'<path d="M{X(pts[0][0]):.1f},{base} L{linha} L{X(pts[-1][0]):.1f},{base} Z" fill="url(#gel)" opacity=".55"/>')
+    out.append(f'<path d="M{linha}" fill="none" stroke="#C4B5FD" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>')
+    n = min(60, len(pts) - 1)
+    for i in range(n):
+        a_, b_ = pts[round(i * (len(pts) - 1) / n)], pts[round((i + 1) * (len(pts) - 1) / n)]
+        meio = (a_[0] + b_[0]) / 2
+        alt = (a_[1] + b_[1]) / 2
+        tip = f"km {str(round(meio / 1000, 2)).replace('.', ',')}\nAltitude|{round(alt)} m"
+        out.append(f'<rect class="hit" x="{X(a_[0]):.1f}" y="{pt}" width="{max(X(b_[0]) - X(a_[0]), 1):.1f}" '
+                   f'height="{h - pt - pb}" data-tip="{esc(tip)}"/>')
+    defs = ('<linearGradient id="gel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8B6CF4"/>'
+            '<stop offset="1" stop-color="#8B6CF4" stop-opacity="0"/></linearGradient>')
+    return (f'<svg class="ch" viewBox="0 0 {w} {h}" role="img" aria-label="Perfil de elevação da corrida">'
+            f'<defs>{defs}</defs>{"".join(out)}</svg>')

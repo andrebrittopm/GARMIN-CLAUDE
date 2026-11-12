@@ -148,6 +148,12 @@ As rotas usam a **biblioteca oficial da Garmin** para ler o arquivo de GPS de ca
   Mude com `py garmin_painel.py --privacidade-metros 500` (0 desliga) e rode `redesenhar.bat`.
   As trilhas completas ficam só no `rotas.json`, no seu computador; o `painel.html` contém só o
   desenho já cortado. Mesmo assim, não compartilhe o painel publicamente: ele mostra a sua região.
+- **Detalhe da corrida:** clique numa rota da galeria (ou no mini-mapa de uma prova já corrida). Abre uma
+  janela com os números da Garmin (distância, tempo, pace, FC média, cadência, ganho de elevação, altitude
+  mínima e máxima), o percurso e o **perfil de elevação** (passe o mouse para ver cada ponto). Funciona
+  também com o arquivo solto, sem servidor.
+- As trilhas que você já tinha baixado antes do perfil de elevação existir são completadas aos poucos nas
+  atualizações normais, ou de uma vez com `py garmin_painel.py --rotas`.
 - Corridas de esteira ou sem GPS ficam sem desenho (normal).
 - A biblioteca da Garmin tem licença própria que **proíbe redistribuí-la**: por isso ela não fica no
   GitHub e cada instalação baixa direto da fonte.

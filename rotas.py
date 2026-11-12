@@ -95,6 +95,23 @@ def pontos_gps(mesgs):
     return out
 
 
+def perfil_altitude(mesgs, maximo=150):
+    """[[distância_m, altitude_m], ...] dos registros que têm os dois valores (números
+    do próprio FIT, sem estimativas), reduzido a no máximo `maximo` pontos."""
+    pts = []
+    for r in mesgs.get("record_mesgs", []):
+        d = r.get("distance")
+        a = r.get("enhanced_altitude") if isinstance(r.get("enhanced_altitude"), (int, float)) else r.get("altitude")
+        if isinstance(d, (int, float)) and isinstance(a, (int, float)) and -500 < a < 9000 and d >= 0:
+            pts.append((float(d), float(a)))
+    if len(pts) < 2:
+        return []
+    if len(pts) > maximo:
+        passo = (len(pts) - 1) / (maximo - 1)
+        pts = [pts[round(i * passo)] for i in range(maximo)]
+    return [[round(d), round(a, 1)] for d, a in pts]
+
+
 def distancia_m(a, b):
     """Distância aproximada entre dois pontos (m), boa para trechos curtos."""
     kx = 111_320 * math.cos(math.radians((a[0] + b[0]) / 2))
@@ -212,16 +229,19 @@ def e_corrida(a):
     return "running" in ((a.get("activityType") or {}).get("typeKey") or "")
 
 
+def _completa(v):
+    """Entrada de rotas.json que não precisa mais ser baixada."""
+    if v.get("sem_gps"):
+        return True
+    if v.get("falhou", 0) >= MAX_TENTATIVAS:
+        return True
+    return "pts" in v and "alt" in v
+
+
 def pendentes(atividades_brutas, guardadas):
-    """Corridas (mais recentes primeiro) cuja trilha ainda não foi guardada."""
-    out = []
-    for a in atividades_brutas:
-        k = str(a.get("activityId"))
-        if not e_corrida(a) or k in guardadas and (
-                "pts" in guardadas[k] or guardadas[k].get("sem_gps")
-                or guardadas[k].get("falhou", 0) >= MAX_TENTATIVAS):
-            continue
-        out.append(a)
+    """Corridas (mais recentes primeiro) cuja trilha ou altitude ainda não foi guardada."""
+    out = [a for a in atividades_brutas
+           if e_corrida(a) and not _completa(guardadas.get(str(a.get("activityId")), {}))]
     return sorted(out, key=lambda a: a.get("startTimeLocal") or "", reverse=True)
 
 
@@ -241,17 +261,19 @@ def buscar_trilhas(cli, atividades_brutas, guardadas, limite=POR_EXECUCAO, progr
             continue
         try:
             fit = extrair_fit(cli.get_bytes(f"/download-service/files/activity/{k}", LIMITE_ZIP))
-            pts = pontos_gps(decodificar(fit))
+            mesgs = decodificar(fit)
+            pts = pontos_gps(mesgs)
             if len(pts) < 10:
                 guardadas[k] = {"sem_gps": True}
             else:
                 guardadas[k] = {"pts": arredondar(simplificar(pts)),
-                                "gps_m": round(comprimento_m(pts))}
+                                "gps_m": round(comprimento_m(pts)),
+                                "alt": perfil_altitude(mesgs)}
                 novas += 1
         except Exception as e:                             # nunca mostra detalhes
             msg = str(e)
-            ant = guardadas.get(k, {}).get("falhou", 0)
-            guardadas[k] = {"falhou": ant + 1}
+            atual = guardadas.get(k, {})
+            guardadas[k] = {**atual, "falhou": atual.get("falhou", 0) + 1}   # mantém a trilha que já existe
             if "429" in msg:
                 avisos.append("A Garmin pediu para esperar (muitos pedidos); as trilhas "
                               "que faltam serão baixadas na próxima atualização.")

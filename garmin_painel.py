@@ -473,7 +473,9 @@ def preparar_rotas(pasta, historico):
         pts = rotas.cortar_pontas(v["pts"], priv)
         if len(pts) >= 5:
             itens.append({"id": k, "data": a["data"], "hora": a.get("hora") or "", "dist_m": a["dist_m"],
-                          "dur_s": a["dur_s"], "vel_ms": a["vel_ms"], "pts": pts})
+                          "dur_s": a["dur_s"], "vel_ms": a["vel_ms"], "pts": pts, "alt": v.get("alt") or [],
+                          "nome": a.get("nome"), "fc_media": a.get("fc_media"), "cad": a.get("cad"),
+                          "elev_m": a.get("elev_m"), "vo2": a.get("vo2")})
     itens.sort(key=lambda x: (x["data"] or "", x["hora"]))
     return {"itens": itens, "privacidade_m": priv}
 

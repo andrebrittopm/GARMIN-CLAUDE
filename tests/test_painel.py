@@ -445,6 +445,11 @@ linha ruim
         simp = rotas.simplificar(pts)
         assert len(simp) == 300 and simp[0] == pts[0] and simp[-1] == pts[-1]
         assert abs(rotas.comprimento_m(simp) - rotas.comprimento_m(pts)) / rotas.comprimento_m(pts) < 0.02
+        alt = rotas.perfil_altitude(rotas.decodificar(fit_bytes))
+        assert 2 <= len(alt) <= 150 and alt[0][0] == 0 and abs(alt[-1][0] - esp["comprimento_m"] * esp["registros"] / esp["com_gps"]) < 60, (len(alt), alt[-1])  # a distância acumulada segue nos registros sem GPS
+        assert all(500 <= a_ <= 519 for _, a_ in alt) and all(alt[i][0] <= alt[i + 1][0] for i in range(len(alt) - 1)), "altitude do arquivo, em ordem"
+        assert rotas.perfil_altitude({"record_mesgs": [{"distance": 1}, {"altitude": 5}]}) == [], "sem par distância+altitude não inventa"
+        assert rotas.perfil_altitude({"record_mesgs": [{"distance": 0, "altitude": 99999}, {"distance": 5, "altitude": 10}]}) == [], "altitude absurda é descartada"
         cort = rotas.cortar_pontas(pts, 300)
         assert abs((rotas.comprimento_m(pts) - rotas.comprimento_m(cort)) - 600) < 25, "tira ~300 m de cada ponta"
         assert rotas.cortar_pontas(pts[:5], 300) == [], "rota curta demais some, nunca vaza"
@@ -671,6 +676,46 @@ linha ruim
     antes = os.path.getmtime(os.path.join(pasta_, "painel.html"))
     dormir(0.05); av = gp.executar_atualizacao(30, False); assert os.path.getmtime(os.path.join(pasta_, "painel.html")) > antes
     assert not any(n.endswith(".tmp") for n in os.listdir(pasta_)), "gravação atômica"
+
+    # 28) perfil de elevação e detalhe da corrida; trilhas antigas (sem altitude) são completadas
+    if rotas.carregar_sdk() is not None:
+        import fit_falso
+        for f_ in ("rotas.json", "dados_brutos.json"):
+            p_ = os.path.join(pasta_, f_)
+            if os.path.exists(p_): os.remove(p_)
+        for f_ in ("perfil.txt", "provas.txt"):
+            if os.path.exists(os.path.join(pasta_, f_)): os.remove(os.path.join(pasta_, f_))
+        corredor.criar_modelos(pasta_)
+        open(os.path.join(pasta_, "perfil.txt"), "w", encoding="utf-8").write("nome: Teste\n")
+        open(os.path.join(pasta_, "provas.txt"), "a", encoding="utf-8").write(f"{d(8).isoformat()}; Prova Cinco; 5\n")
+        def zip2(aid):
+            fb, _ = fit_falso.criar(-20.44 + (aid % 7) * 0.003, -54.64, 150 + (aid % 5) * 40, 1 + aid % 3, 600, 10)
+            b_ = io.BytesIO()
+            with zipfile.ZipFile(b_, "w") as z_: z_.writestr(f"{aid}.fit", fb)
+            return b_.getvalue()
+        Estado.zip_por_id = zip2
+        rc, out = rodar(["--sem-abrir", "--historico", "60"]); assert rc == 0, out
+        rc, out = rodar(["--sem-abrir", "--rotas"]); assert rc == 0, out
+        rg = rotas.carregar_rotas(pasta_)
+        assert all(v.get("alt") for v in rg.values() if "pts" in v), "toda trilha nova traz o perfil de altitude"
+        pg = painel()
+        assert pg.count('<template id="det-') >= 8 and "Perfil de elevação" in pg and "Altitude mín–máx" in pg
+        assert 'data-det="' in pg and 'class="mini"' in pg, "mini-mapa no cartão da prova já corrida"
+        assert "Ganho de elevação" in pg and not re.search(r"-\d{2}\.\d{4,}", pg), "nenhuma coordenada no HTML"
+        # trilhas guardadas antes de existir a altitude: entram na fila e ganham o perfil sem perder a trilha
+        for k in list(rg)[:3]:
+            if "pts" in rg[k]: rg[k].pop("alt")
+        rotas.salvar_rotas(pasta_, rg)
+        assert len(rotas.pendentes(armazem.todas_atividades(armazem.carregar(os.path.join(pasta_, "dados_brutos.json"))), rg)) >= 1
+        pts_antes = {k: rg[k]["pts"] for k in rg if "pts" in rg[k]}
+        rc, out = rodar(["--sem-abrir", "--rotas"]); rg2 = rotas.carregar_rotas(pasta_)
+        assert all(v.get("alt") for v in rg2.values() if "pts" in v) and {k: rg2[k]["pts"] for k in rg2 if "pts" in rg2[k]} == pts_antes
+        # falha ao completar a altitude NÃO apaga a trilha que já existe
+        k0 = next(k for k in rg2 if "pts" in rg2[k]); rg2[k0].pop("alt"); rotas.salvar_rotas(pasta_, rg2)
+        Estado.zip_por_id = lambda aid: b"lixo"
+        rodar(["--sem-abrir", "--rotas"]); rg3 = rotas.carregar_rotas(pasta_)
+        assert rg3[k0]["pts"] == pts_antes[k0] and rg3[k0].get("falhou") == 1 and "alt" not in rg3[k0]
+        Estado.zip_por_id = None
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
