@@ -155,6 +155,8 @@ class Cliente:
                          "Accept": "application/json", "User-Agent": UA})
             try:
                 corpo = self._abrir(req)
+                if sys.stdout.isatty():     # um ponto por pedido, para ver que está andando
+                    print(".", end="", flush=True)
                 return json.loads(corpo) if corpo.strip() else None
             except Erro as e:
                 msg = str(e)
@@ -422,6 +424,8 @@ def atualizar_armazem(cli, dados, hoje, ini):
                 avisos.append(f"Peso não pôde ser lido ({e}); será tentado de novo "
                               "na próxima atualização")
         ativ = buscar_atividades(cli, *jan)
+        if sys.stdout.isatty():
+            print()
         armazem.mesclar(dados, jan, resumos, sonos, vfc, ativ, peso)
         print(f"- resumos: {len(resumos)} - sono: {len(sonos)} - "
               f"VFC: {len(vfc)} - peso: {len(peso)} - atividades: {len(ativ)}")
