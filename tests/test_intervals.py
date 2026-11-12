@@ -113,15 +113,22 @@ gravado = {}
 orig = (cofre.ler_area_de_transferencia, cofre.gravar_chave_intervals, cofre.limpar_area_de_transferencia)
 cofre.gravar_chave_intervals = lambda v: gravado.update(v=v)
 limpou = []; cofre.limpar_area_de_transferencia = lambda: limpou.append(1)
-for texto, ok in ((CHAVE, True), ("", False), ("curta", False), ("tem espaco no meio 12345", False), ("x" * 300, False), ("abc\n1234567890123", False)):
-    cofre.ler_area_de_transferencia = lambda t=texto: t
+# (área de transferência, o que o usuário cola no campo escondido, deve gravar?)
+for area, colado, ok in ((CHAVE, None, True), ("", CHAVE, True), ("curta", CHAVE + "\n", True), ("tem espaco no meio 12345", CHAVE, True),
+                         ("", "", False), ("", "curta", False), ("", "tem espaco no meio 12345", False), ("", "x" * 300, False),
+                         ("lixo", "lixo", False)):
+    cofre.ler_area_de_transferencia = lambda t=area: t
+    perguntas = []
+    def pedir(msg, c=colado): perguntas.append(msg); return c if c is not None else (_ for _ in ()).throw(AssertionError("não deveria pedir"))
     gravado.clear(); limpou.clear(); buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        try: r = gp.guardar_chave_intervals()
+        try: r = gp.guardar_chave_intervals(pedir)
         except gp.Erro as e: r = str(e)
-    assert (gravado.get("v") == CHAVE) is ok and bool(limpou) is ok, (texto, r)
-    saida_ = buf.getvalue() + str(r)
-    if ok: assert "OK: chave do intervals.icu guardada" in saida_ and CHAVE not in saida_, "a chave nunca é impressa"
+    assert (gravado.get("v") == CHAVE) is ok and bool(limpou) is ok, (area, colado, r)
+    saida_ = buf.getvalue() + str(r) + "".join(perguntas)
+    assert CHAVE not in saida_, "a chave nunca é impressa"
+    assert bool(perguntas) is (colado is not None), "só pede para colar quando a área de transferência não serve"
+    if ok: assert "OK: chave do intervals.icu guardada" in saida_
     else: assert "não parece uma chave" in saida_ and not gravado
 cofre.ler_area_de_transferencia, cofre.gravar_chave_intervals, cofre.limpar_area_de_transferencia = orig
 srv.shutdown()

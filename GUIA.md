@@ -206,6 +206,8 @@ Guarda só nome, tipo, duração e distância; **as descrições dos treinos nã
    `py garmin_painel.py --guardar-chave-intervals`
    Deve aparecer `OK: chave do intervals.icu guardada`. A chave vai para o Gerenciador de Credenciais
    (nome `intervals-icu-api-key`) e a área de transferência é limpa. Ela não é mostrada nem salva em arquivo.
+   Se o que está copiado não servir, o programa pede para você colar a chave numa linha escondida
+   (clique com o botão direito do mouse; nada aparece na tela; Enter). **Nunca escreva a chave dentro do comando.**
 3. Teste: `py garmin_painel.py --testar-intervals` (mostra quantos eventos vieram). Se der "não achou esse atleta",
    use o número que aparece no seu perfil do intervals.icu: `py garmin_painel.py --intervals-atleta i12345`.
 4. Pronto: a cada atualização o calendário é buscado junto. Se falhar, o painel mostra o último que guardou e avisa.

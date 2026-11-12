@@ -704,18 +704,31 @@ def redesenhar(dias=30, abrir=False):
     return avisos
 
 
-def guardar_chave_intervals():
-    """Guarda no cofre a chave que está na área de transferência. A chave nunca é impressa."""
+def _chave_intervals_valida(k):
+    return bool(k) and 10 <= len(k) <= 200 and k.isprintable() and not any(c.isspace() for c in k)
+
+
+def guardar_chave_intervals(pedir=None):
+    """Guarda a chave no cofre. Primeiro tenta a área de transferência (o que você copiou);
+    se não servir, pede para você colar aqui numa linha ESCONDIDA. A chave nunca é impressa."""
+    import getpass
     from cofre import (gravar_chave_intervals, ler_area_de_transferencia,
                        limpar_area_de_transferencia)
+    pedir = pedir or getpass.getpass
     k = ler_area_de_transferencia()
-    if not k or len(k) < 10 or len(k) > 200 or any(c.isspace() for c in k) or not k.isprintable():
-        raise Erro("O que está copiado não parece uma chave do intervals.icu. Copie a chave de API "
-                   "(Settings > Developer Settings > API Key) e rode o comando de novo.")
+    if not _chave_intervals_valida(k):
+        print(f"A área de transferência não tem uma chave válida (tem {len(k)} caracteres). "
+              "Vou pedir para você colar a chave aqui.\n"
+              "Clique com o botão direito do mouse para colar. Nada vai aparecer na tela, é normal. "
+              "Depois aperte Enter.")
+        k = (pedir("Chave do intervals.icu: ") or "").strip()
+        if not _chave_intervals_valida(k):
+            raise Erro(f"Isso não parece uma chave do intervals.icu (tem {len(k)} caracteres, sem espaços). "
+                       "Copie a chave de API em Settings > Developer Settings e rode o comando de novo.")
     gravar_chave_intervals(k)
     limpar_area_de_transferencia()
     print(f"OK: chave do intervals.icu guardada no cofre ({len(k)} caracteres). "
-          "A área de transferência foi limpa. Próximo passo: py garmin_painel.py --testar-intervals")
+          "Próximo passo: py garmin_painel.py --testar-intervals")
     return 0
 
 
