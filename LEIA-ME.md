@@ -23,6 +23,7 @@ Guia completo em português (para quem não programa): **GUIA.md**.
 - Apagar o token guardado no cofre: `py garmin_painel.py --esquecer-token`
 - Metas suas: `py garmin_painel.py --meta km-mes=50` (opções: km-semana, corridas-semana, km-mes, horas-mes); apagar: `--remover-meta NOME`
 - Mais histórico para os recordes: `py garmin_painel.py --historico 365`
+- Visual de corredor (foto, provas, logos): `py garmin_painel.py --criar-perfil` e edite `perfil.txt` e `provas.txt`
 - Conferir tudo (chave, token, conexão, dados, agendamento): `py garmin_painel.py --diagnostico`
 - Avisar antes de a chave vencer: `py garmin_painel.py --chave-vence AAAA-MM-DD`
 

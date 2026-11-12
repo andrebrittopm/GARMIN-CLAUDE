@@ -8,3 +8,6 @@ dados_brutos.corrompido-*.json
 backups/
 config_painel.json
 ultimo_log.txt
+perfil.txt
+provas.txt
+imagens/

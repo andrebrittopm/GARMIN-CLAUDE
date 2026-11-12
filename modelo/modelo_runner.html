@@ -91,19 +91,7 @@ border:1px solid var(--ouro);background:rgba(255,210,63,.08);color:var(--tx);fon
 .meta-lin .txt{display:flex;justify-content:space-between;font-size:.9rem}
 .faixa[hidden]{display:none}
 .faixa b{color:var(--ouro);font-family:var(--titulo);text-transform:uppercase;font-size:.78rem;letter-spacing:.04em;white-space:nowrap}
-@media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
-@media print{
-:root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
---roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
-html,body{background:#fff!important;background-image:none!important}
-.seletor,.barra,#tip,#velho{display:none!important}
-.card,.kpi,.tw{break-inside:avoid;box-shadow:none}
-.tw{overflow:visible}main{max-width:none;padding:0}
-.ch .hit{display:none}
-}
-
-.mock-tag{display:flex;gap:10px;align-items:center;justify-content:center;text-align:center;margin:0 0 18px;padding:10px 14px;
-border:1px dashed var(--ouro);border-radius:12px;color:var(--ouro);font:700 .78rem var(--mono);letter-spacing:.04em;text-transform:uppercase}
+/* ---- visual de corredor (perfil, provas, medalhas) ---- */
 .hero{position:relative;overflow:hidden;border:1px solid var(--bd);border-radius:26px;padding:34px 30px 30px;
 background:radial-gradient(700px 320px at 85% -10%,rgba(139,92,246,.45),transparent 65%),linear-gradient(160deg,#1b1233,#0f0a1d)}
 .hero>svg{position:absolute;inset:0;width:100%;height:100%}
@@ -118,33 +106,32 @@ background:radial-gradient(700px 320px at 85% -10%,rgba(139,92,246,.45),transpar
 .hs .v{font:700 1.9rem/1.15 var(--mono);color:var(--tx);font-variant-numeric:tabular-nums}
 .hs.ouro{border-color:var(--ouro)}.hs.ouro .v{color:var(--ouro)}
 h2.t{font-style:italic}
-.provas{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}
+.provas{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
 .bib{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:6px 14px;align-items:center;padding:16px 18px 16px 22px;border-radius:14px}
 .bib .furos{position:absolute;inset:0;pointer-events:none;border-radius:14px;
 background:radial-gradient(circle 4px at 9px 9px,var(--bg) 98%,transparent) ,radial-gradient(circle 4px at calc(100% - 9px) 9px,var(--bg) 98%,transparent),
 radial-gradient(circle 4px at 9px calc(100% - 9px),var(--bg) 98%,transparent),radial-gradient(circle 4px at calc(100% - 9px) calc(100% - 9px),var(--bg) 98%,transparent)}
-.bib.feita{background:#f1eeff;color:#1a1426}
+.bib.feita{background:#f1eeff;color:#1a1426;grid-template-columns:auto 1fr}
+.bib.feita .num{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;text-align:left;
+border-top:1px solid rgba(26,20,38,.14);padding-top:9px;margin-top:4px}
+.bib.feita .num div{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.bib.feita .num dd{font-size:1.05rem}
 .bib.feita .mut,.bib.feita p{color:#4a4268;margin:2px 0 0}
 .bib.prox{background:var(--card);border:1px solid var(--bd)}
 .bib h3{margin:3px 0 0;font:900 1.05rem/1.15 var(--titulo);font-style:italic;text-transform:uppercase}
 .bib p{margin:2px 0 0;font-size:.85rem}
 .logo{width:56px;height:56px;flex:none}
-.tag{display:inline-block;font:700 .62rem var(--mono);letter-spacing:.1em;padding:2px 8px;border-radius:999px;border:1px solid var(--roxo2);color:var(--roxo2)}
+.logo-img{width:56px;height:56px;flex:none;object-fit:contain;background:#fff;border-radius:12px;padding:4px}
+.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.bib .corpo{min-width:0}
+.tag{white-space:nowrap;display:inline-block;font:700 .62rem var(--mono);letter-spacing:.1em;padding:2px 8px;border-radius:999px;border:1px solid var(--roxo2);color:var(--roxo2)}
 .tag.ok{border-color:#4b32b0;color:#4b32b0}
 .conta{display:flex;flex-direction:column;align-items:center;color:var(--ouro);font:700 .7rem var(--mono);text-transform:uppercase}
 .conta .n{font-size:2rem;line-height:1;color:var(--ouro)}
 .num{margin:0;display:grid;gap:4px;text-align:right}
 .num div{display:flex;gap:8px;justify-content:flex-end;align-items:baseline}
 .num dt{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:#6a6190}
-.num dd{margin:0;font:700 1rem var(--mono);color:#1a1426}
-.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
-.rota{background:rgba(11,8,19,.5);border:1px solid var(--bd);border-radius:16px;padding:10px 12px 12px;transition:border-color .15s,transform .15s}
-.rota:hover{border-color:var(--roxo2);transform:translateY(-2px)}
-.rota svg{width:100%;height:auto;display:block}
-.rota .cap{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;margin-top:4px}
-.rota .cap b{font-family:var(--mono)}
-.mapa{background:radial-gradient(500px 220px at 50% 50%,rgba(139,92,246,.18),transparent 70%),#0d0918;border:1px solid var(--bd);border-radius:16px;padding:6px}
-.mapa svg{width:100%;height:auto;display:block}
+.num dd{white-space:nowrap;margin:0;font:700 1rem var(--mono);color:#1a1426}
 .medalhas{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
 .medalha{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:18px 10px}
 .anel{width:104px;height:104px;border-radius:50%;display:grid;place-items:center;
@@ -153,11 +140,32 @@ background:radial-gradient(circle at 50% 35%,#2b1f4d,#140d26);border:3px solid v
 .anel small{font-size:.7rem;color:var(--mut);font-weight:400}
 .medalha .t1{font:900 .85rem var(--titulo);font-style:italic;text-transform:uppercase}
 .medalha .t2{font-size:.78rem;color:var(--mut)}
+@media(max-width:560px){.hero-in{grid-template-columns:1fr}.avatar{width:110px;height:110px}.bib{grid-template-columns:auto 1fr}.conta,.num{grid-column:1/-1;flex-direction:row;gap:8px}}
+@media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
+@media print{
+:root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
+--roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
+html,body{background:#fff!important;background-image:none!important}
+.seletor,.barra,#tip,#velho{display:none!important}
+.card,.kpi,.tw{break-inside:avoid;box-shadow:none}
+.tw{overflow:visible}main{max-width:none;padding:0}
+.ch .hit{display:none}
+}
+
+.mock-tag{display:flex;gap:10px;align-items:center;justify-content:center;text-align:center;margin:0 0 18px;padding:10px 14px;
+border:1px dashed var(--ouro);border-radius:12px;color:var(--ouro);font:700 .78rem var(--mono);letter-spacing:.04em;text-transform:uppercase}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.rota{background:rgba(11,8,19,.5);border:1px solid var(--bd);border-radius:16px;padding:10px 12px 12px;transition:border-color .15s,transform .15s}
+.rota:hover{border-color:var(--roxo2);transform:translateY(-2px)}
+.rota svg{width:100%;height:auto;display:block}
+.rota .cap{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;margin-top:4px}
+.rota .cap b{font-family:var(--mono)}
+.mapa{background:radial-gradient(500px 220px at 50% 50%,rgba(139,92,246,.18),transparent 70%),#0d0918;border:1px solid var(--bd);border-radius:16px;padding:6px}
+.mapa svg{width:100%;height:auto;display:block}
 .leg2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:6px}
 .leg2 div{border:1px solid var(--bd);border-radius:14px;padding:12px 14px;font-size:.86rem}
 .leg2 b{display:block;margin-bottom:4px;font:900 .8rem var(--titulo);text-transform:uppercase;font-style:italic}
 .ver{color:#8fd9b6}.fix{color:var(--ouro)}
-@media(max-width:560px){.hero-in{grid-template-columns:1fr}.avatar{width:110px;height:110px}.bib{grid-template-columns:auto 1fr}.conta,.num{grid-column:1/-1;flex-direction:row;gap:8px}}
 </style></head>
 <body data-n="14" data-hoje="2026-11-12"><main>
 <div class="mock-tag">Modelo estático · dados, foto, logos, provas e rotas são de EXEMPLO · nada aqui vem da sua conta Garmin</div>
@@ -185,8 +193,8 @@ background:radial-gradient(circle at 50% 35%,#2b1f4d,#140d26);border:3px solid v
 <div class="kpi s"><div class="r">Tempo correndo</div><div class="v">0:50:00</div></div>
 <div class="kpi s"><div class="r">Pace médio</div><div class="v">5:00 /km</div></div></div>
 
-<h2 class="t">Próximas provas</h2><div class="provas"><article class="bib prox"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: FA"><g fill="#D95926"><path d="M30 6 L52 14 V32 C52 44 42 52 30 56 C18 52 8 44 8 32 V14 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">FA</text></svg><div class="corpo"><span class="tag">PRÓXIMA · 10 KM</span><h3>Corrida de Fim de Ano</h3><p class="mut">06 dez 2026</p></div><div class="conta"><span class="n">24</span><span>dias</span></div></article><article class="bib prox"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: MO"><g fill="#3987E5"><path d="M30 5 L52 17.5 V42.5 L30 55 L8 42.5 V17.5 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">MO</text></svg><div class="corpo"><span class="tag">PRÓXIMA · 21,1 KM</span><h3>Meia da Orla</h3><p class="mut">21 mar 2027</p></div><div class="conta"><span class="n">129</span><span>dias</span></div></article><article class="bib prox"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: ME"><g fill="#199E70"><path d="M30 4 L56 30 L30 56 L4 30 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">ME</text></svg><div class="corpo"><span class="tag">PRÓXIMA · 42,2 KM</span><h3>Maratona Exemplo</h3><p class="mut">30 mai 2027</p></div><div class="conta"><span class="n">199</span><span>dias</span></div></article></div>
-<h2 class="t">Provas que já corri</h2><div class="provas"><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: 10K"><g fill="#D55181"><circle cx="30" cy="30" r="24"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">10K</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 10 KM</span><h3>10K Noturna</h3><p>18 out 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>0:49:58</dd></div><div><dt>Pace</dt><dd>5:00 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: TS"><g fill="#199E70"><path d="M30 5 L52 17.5 V42.5 L30 55 L8 42.5 V17.5 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">TS</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 15 KM</span><h3>Trail da Serra</h3><p>27 set 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>1:37:12</dd></div><div><dt>Pace</dt><dd>6:29 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: CP"><g fill="#3987E5"><path d="M30 6 L52 14 V32 C52 44 42 52 30 56 C18 52 8 44 8 32 V14 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">CP</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 5 KM</span><h3>Corrida da Primavera</h3><p>09 ago 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>0:23:45</dd></div><div><dt>Pace</dt><dd>4:45 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: MO"><g fill="#3987E5"><path d="M30 5 L52 17.5 V42.5 L30 55 L8 42.5 V17.5 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">MO</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 21,1 KM</span><h3>Meia da Orla</h3><p>24 mai 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>1:51:52</dd></div><div><dt>Pace</dt><dd>5:18 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Logo de exemplo: CC"><g fill="#9085E9"><path d="M30 4 L56 30 L30 56 L4 30 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">CC</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 10 KM</span><h3>Corrida da Cidade</h3><p>15 mar 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>0:51:30</dd></div><div><dt>Pace</dt><dd>5:09 /km</dd></div></dl></article></div>
+<h2 class="t">Próximas provas</h2><div class="provas"><article class="bib prox"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo FA"><g fill="#D95926"><path d="M30 6 L52 14 V32 C52 44 42 52 30 56 C18 52 8 44 8 32 V14 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">FA</text></svg><div class="corpo"><span class="tag">PRÓXIMA · 10 KM</span><h3>Corrida de Fim de Ano</h3><p class="mut">06 dez 2026</p></div><div class="conta"><span class="n">24</span><span>dias</span></div></article><article class="bib prox"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo MO"><g fill="#3987E5"><path d="M30 5 L52 17.5 V42.5 L30 55 L8 42.5 V17.5 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">MO</text></svg><div class="corpo"><span class="tag">PRÓXIMA · 21,1 KM</span><h3>Meia da Orla</h3><p class="mut">21 mar 2027</p></div><div class="conta"><span class="n">129</span><span>dias</span></div></article><article class="bib prox"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo ME"><g fill="#199E70"><path d="M30 4 L56 30 L30 56 L4 30 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">ME</text></svg><div class="corpo"><span class="tag">PRÓXIMA · 42,2 KM</span><h3>Maratona Exemplo</h3><p class="mut">30 mai 2027</p></div><div class="conta"><span class="n">199</span><span>dias</span></div></article></div>
+<h2 class="t">Provas que já corri</h2><div class="provas"><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo 10K"><g fill="#D55181"><circle cx="30" cy="30" r="24"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">10K</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 10 KM</span><h3>10K Noturna</h3><p>18 out 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>0:49:58</dd></div><div><dt>Pace</dt><dd>5:00 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo TS"><g fill="#199E70"><path d="M30 5 L52 17.5 V42.5 L30 55 L8 42.5 V17.5 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">TS</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 15 KM</span><h3>Trail da Serra</h3><p>27 set 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>1:37:12</dd></div><div><dt>Pace</dt><dd>6:29 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo CP"><g fill="#3987E5"><path d="M30 6 L52 14 V32 C52 44 42 52 30 56 C18 52 8 44 8 32 V14 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">CP</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 5 KM</span><h3>Corrida da Primavera</h3><p>09 ago 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>0:23:45</dd></div><div><dt>Pace</dt><dd>4:45 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo MO"><g fill="#3987E5"><path d="M30 5 L52 17.5 V42.5 L30 55 L8 42.5 V17.5 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">MO</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 21,1 KM</span><h3>Meia da Orla</h3><p>24 mai 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>1:51:52</dd></div><div><dt>Pace</dt><dd>5:18 /km</dd></div></dl></article><article class="bib feita"><div class="furos"></div><svg class="logo" viewBox="0 0 60 60" role="img" aria-label="Selo CC"><g fill="#9085E9"><path d="M30 4 L56 30 L30 56 L4 30 Z"/></g><text x="30" y="35" text-anchor="middle" font-family="Segoe UI Black,Arial Black,sans-serif" font-size="15" font-weight="900" fill="#fff" font-style="italic">CC</text></svg><div class="corpo"><span class="tag ok">CORRIDA · 10 KM</span><h3>Corrida da Cidade</h3><p>15 mar 2026</p></div><dl class="num"><div><dt>Tempo</dt><dd>0:51:30</dd></div><div><dt>Pace</dt><dd>5:09 /km</dd></div></dl></article></div>
 
 <section class="card"><h2>Meus percursos</h2>
 <p class="sub">uma rota por corrida, no estilo neon · o início e o fim ficam tracejados (ocultos) por privacidade</p>

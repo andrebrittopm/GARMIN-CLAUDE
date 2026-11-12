@@ -39,6 +39,7 @@ import webbrowser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
 import configuracao  # noqa: E402
+import corredor  # noqa: E402
 import diagnostico  # noqa: E402
 import metas  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
@@ -345,6 +346,7 @@ def montar_atividades(brutas):
             "hora": (g(a, "startTimeLocal") or "")[11:16] or None,
             "tipo": g(a, "activityType", "typeKey"),
             "nome": g(a, "activityName"),
+            "evento": g(a, "eventType", "typeKey"),
             "dist_m": g(a, "distance"),
             "dur_s": g(a, "duration"),
             "vel_ms": g(a, "averageSpeed"),
@@ -442,13 +444,15 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
     ativ = montar_atividades(brutas)
     historico = montar_atividades(armazem.todas_atividades(dados))
     pasta = pasta_dados()
+    co = corredor.montar(pasta, historico, hoje, dados.get("cobertura_ini"))
+    avisos = list(avisos) + (co["avisos"] if co else [])
     alerta = configuracao.alerta(pasta)
     venc = configuracao.vencimento(pasta)
     pag, omitidos = pagina(montar_dias(resumos, sonos, vfc, peso), ativ, ini, hoje,
                            agora, avisos, [alerta] if alerta else None,
                            venc[0] if venc else None,
                            historico=historico, metas=metas.progresso(pasta, historico, hoje),
-                           cobertura_ini=dados.get("cobertura_ini"))
+                           cobertura_ini=dados.get("cobertura_ini"), corredor=co)
     caminho = os.path.join(pasta, "painel.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(pag)
@@ -498,6 +502,9 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--criar-perfil", action="store_true",
+                   help="cria perfil.txt, provas.txt e as pastas de imagens para o "
+                        "visual de corredor (foto, logos e provas)")
     p.add_argument("--esquecer-token", action="store_true",
                    help="apaga o token guardado no cofre do Windows")
     a = p.parse_args(argv)
@@ -528,6 +535,11 @@ def main(argv=None):
                 except ValueError as e:
                     raise Erro(str(e)) from None
                 print(f"Meta removida: {a.remover_meta}")
+            return 0
+        if a.criar_perfil:
+            feitos = corredor.criar_modelos(pasta_dados())
+            print("Criados: " + (", ".join(feitos) if feitos else "nada novo (já existiam)")
+                  + f"\nPasta: {pasta_dados()}\nColoque sua foto em imagens\\ e os logos em imagens\\corridas\\.")
             return 0
         if a.esquecer_token:
             apagar_token_cache()

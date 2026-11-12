@@ -30,6 +30,8 @@ diagnóstico e sem conselho de treino.
 | `visual.py` | Desenha a página e os gráficos | Não |
 | `diagnostico.py`, `configuracao.py` | Conferência geral e data de vencimento da chave | Não |
 | `metas.py` | Suas metas e o progresso delas | Não |
+| `corredor.py`, `arte.py` | Perfil, provas e logos; desenhos (selos, curvas) | Não |
+| `perfil.txt`, `provas.txt`, `imagens\\` | Seu nome, suas provas, foto e logos | **Sim** |
 | `dados_brutos.json` | Seus dados guardados (**dados de saúde**, sem chave) | Não |
 | `backups/` | Até 5 cópias diárias do arquivo acima | Só para restaurar |
 | `ultimo_log.txt` | O que a última atualização automática fez | Para olhar |
@@ -80,6 +82,29 @@ https://connect.garmin.com/app/settings/personalApiToken . Informe-a uma vez com
   `py garmin_painel.py --historico 365` uma vez para ampliar (pode levar alguns minutos).
 - **Peso, hidratação e SpO2** aparecem se a Garmin enviar esses dados. Sem balança conectada, o gráfico
   de peso some e o programa avisa. Pesos acima de 300 são tratados como gramas.
+
+### Visual de corredor: foto, provas e logos
+
+Rode `py garmin_painel.py --criar-perfil` uma vez. Isso cria, na pasta dos dados:
+
+- `perfil.txt`: seu **nome**, uma **frase** e o nome do arquivo da **foto**.
+- `provas.txt`: uma prova por linha, no formato `data; nome; distância em km; logo`.
+- as pastas `imagens\` (coloque a **foto** aqui) e `imagens\corridas\` (coloque os **logos** aqui).
+
+Edite os dois `.txt` no Bloco de Notas e salve; depois rode `redesenhar.bat`. Detalhes:
+
+- Provas **futuras** mostram "faltam N dias". Provas **já corridas** mostram tempo, pace e
+  distância **da atividade da Garmin no mesmo dia** (a mais parecida com a distância que você
+  informou, até 20% de diferença). Sem atividade parecida, aparece "sem dado". O painel não
+  prevê tempos de prova.
+- Corridas marcadas como **competição** na Garmin e que não estão no `provas.txt` aparecem
+  sozinhas como "COMPETIÇÃO".
+- Sem logo, o painel desenha um selo com as iniciais da prova.
+- Imagens: png, jpg, webp, gif ou svg, até 2,5 MB, **só o nome do arquivo** (sem pastas). Ficam
+  embutidas no `painel.html`, só no seu computador.
+- Sem `perfil.txt`, o painel mantém o cabeçalho clássico.
+- A soma "no ano" só aparece como do ano quando o histórico guardado começa em 1º de janeiro;
+  antes disso ela diz "desde dd/mm". Rode `--historico 365` para completar.
 
 ## 4. Se algo der errado
 

@@ -9,6 +9,7 @@ import datetime as dt
 import html
 import math
 
+from arte import arte_topo, foto_exemplo, selo_iniciais
 from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, comparar_semanas, cor_esporte, data_br,
                       grupo, hcurto, hm, hms, km, minutos, num, pace,
                       pace_de_velocidade, rotulo_esporte, segunda,
@@ -680,6 +681,112 @@ def card_metas(lista):
             'enviadas pela Garmin. A marca dourada é o fim da meta.</p>')
 
 
+# ---------------------------------------------------- visual de corredor ----
+def _dist_txt(d_km):
+    return f"{num(d_km, 0 if float(d_km).is_integer() else 1)} km"
+
+
+def _logo(p):
+    if p.get("logo_uri"):
+        return f'<img class="logo-img" src="{p["logo_uri"]}" alt="Logo {esc(p["nome"])}">'
+    return selo_iniciais(p["nome"])
+
+
+def _data_curta(d):
+    meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+    return f"{d.day:02d} {meses[d.month - 1]} {d.year}"
+
+
+def card_prova_proxima(p):
+    dist = _dist_txt(p["dist_km"]).upper() if p.get("dist_km") else ""
+    tag = f"PRÓXIMA · {esc(dist)}" if dist else "PRÓXIMA"
+    n = p["dias"]
+    return (f'<article class="bib prox"><div class="furos"></div>{_logo(p)}'
+            f'<div class="corpo"><span class="tag">{tag}</span><h3>{esc(p["nome"])}</h3>'
+            f'<p class="mut">{_data_curta(p["data"])}</p></div>'
+            f'<div class="conta"><span class="n">{"hoje" if n == 0 else n}</span>'
+            f'<span>{"" if n == 0 else ("dia" if n == 1 else "dias")}</span></div></article>')
+
+
+def card_prova_feita(p):
+    a = p.get("atv")
+    if p.get("dist_km"):
+        dist = _dist_txt(p["dist_km"]).upper()
+    else:
+        dist = km(a["dist_m"]).upper() if a and a.get("dist_m") else ""
+    rotulo = "COMPETIÇÃO" if p.get("origem") == "garmin" else "CORRIDA"
+    tag = f"{rotulo} · {esc(dist)}" if dist else rotulo
+    if a:
+        tempo, ritmo = hms(a["dur_s"]), pace(pace_de_velocidade(a["vel_ms"]))
+        real = f'<div><dt>Garmin</dt><dd>{esc(km(a["dist_m"]))}</dd></div>'
+    else:
+        tempo = ritmo = SEM_DADO
+        real = ""
+    return (f'<article class="bib feita"><div class="furos"></div>{_logo(p)}'
+            f'<div class="corpo"><span class="tag ok">{tag}</span><h3>{esc(p["nome"])}</h3>'
+            f'<p>{_data_curta(p["data"])}</p></div>'
+            f'<dl class="num"><div><dt>Tempo</dt><dd>{esc(tempo)}</dd></div>'
+            f'<div><dt>Pace</dt><dd>{esc(ritmo)}</dd></div>{real}</dl></article>')
+
+
+def hero_html(co, agora):
+    per = co["perfil"]
+    foto = (f'<img src="{per["foto_uri"]}" alt="Foto de {esc(per["nome"])}">'
+            if per["foto_uri"] else foto_exemplo(False))
+    p = co["periodo"]
+    sufixo = "no ano" if p["do_ano"] else f"desde {p['desde'].day:02d}/{p['desde'].month:02d}"
+    stats = [("Distância " + sufixo, km(p["dist_m"]) if p["n"] else SEM_DADO, ""),
+             ("Corridas " + sufixo, str(p["n"]), ""),
+             ("Provas corridas", str(len(co["feitas"])), "")]
+    if co["proximas"]:
+        n = min(x["dias"] for x in co["proximas"])
+        stats.append(("Próxima prova em", "hoje" if n == 0 else f"{n} {'dia' if n == 1 else 'dias'}", "ouro"))
+    hs = "".join(f'<div class="hs {cl}"><div class="r">{esc(r)}</div><div class="v">{esc(v)}</div></div>'
+                 for r, v, cl in stats)
+    frase = f'<p class="sub" style="margin:0">{esc(per["frase"])}</p>' if per["frase"] else ""
+    return (f'<header class="hero">{arte_topo()}<div class="hero-in">'
+            f'<div class="avatar">{foto}</div>'
+            f'<div><p class="eyebrow">PAINEL DO CORREDOR</p><h1>{esc(per["nome"])}</h1>{frase}'
+            f'<p class="sub" style="margin:6px 0 0">Período: {{ini}} a {{fim}} · atualizado em {agora.strftime("%d/%m/%Y %H:%M")}</p></div>'
+            f'<div class="hero-stats">{hs}</div></div></header>')
+
+
+def provas_html(co):
+    out = ""
+    if co["proximas"]:
+        out += ('<h2 class="t">Próximas provas</h2><div class="provas">'
+                + "".join(card_prova_proxima(p) for p in co["proximas"]) + "</div>")
+    if co["feitas"]:
+        out += ('<h2 class="t">Provas que já corri</h2><div class="provas">'
+                + "".join(card_prova_feita(p) for p in co["feitas"]) + "</div>"
+                '<p class="sub" style="margin-top:8px">Tempo, pace e distância vêm da atividade da Garmin '
+                'no dia da prova; podem diferir do tempo oficial da organização.</p>')
+    return out
+
+
+MEDALHAS = ["Mais rápido: 1 km", "Mais rápido: 5 km", "Mais rápido: 10 km",
+            "Mais rápido: Meia maratona", "Corrida mais longa"]
+
+
+def medalhas_html(recs):
+    por = {r[0]: r for r in recs}
+    itens = []
+    for nome in MEDALHAS:
+        if nome in por:
+            r = por[nome]
+            txt = r[1][0] if isinstance(r[1], tuple) else r[1]
+            dia = r[3][0] if isinstance(r[3], tuple) else r[3]
+            if " " in txt:
+                n_, u_ = txt.split(" ", 1)
+                val = f"{esc(n_)}<small>{esc(u_)}</small>"
+            else:
+                val = esc(txt)
+            itens.append(f'<div class="medalha"><div class="anel"><span>{val}</span></div>'
+                         f'<div class="t1">{esc(nome.replace("Mais rápido: ", ""))}</div>'
+                         f'<div class="t2">{esc(dia)}</div></div>')
+    return f'<div class="medalhas">{"".join(itens)}</div>' if itens else ""
+
+
 # ---------------------------------------------------------------- página ----
 CSS = """
 :root{--bg:#0b0813;--card:rgba(26,19,42,.78);--bd:rgba(167,139,250,.2);
@@ -772,6 +879,56 @@ border:1px solid var(--ouro);background:rgba(255,210,63,.08);color:var(--tx);fon
 .meta-lin .txt{display:flex;justify-content:space-between;font-size:.9rem}
 .faixa[hidden]{display:none}
 .faixa b{color:var(--ouro);font-family:var(--titulo);text-transform:uppercase;font-size:.78rem;letter-spacing:.04em;white-space:nowrap}
+/* ---- visual de corredor (perfil, provas, medalhas) ---- */
+.hero{position:relative;overflow:hidden;border:1px solid var(--bd);border-radius:26px;padding:34px 30px 30px;
+background:radial-gradient(700px 320px at 85% -10%,rgba(139,92,246,.45),transparent 65%),linear-gradient(160deg,#1b1233,#0f0a1d)}
+.hero>svg{position:absolute;inset:0;width:100%;height:100%}
+.hero-in{position:relative;display:grid;grid-template-columns:auto 1fr;gap:24px 28px;align-items:center}
+.avatar{width:150px;height:150px;border-radius:50%;padding:5px;background:conic-gradient(from 210deg,#C4B5FD,#56B4E9,#8B6CF4,#C4B5FD)}
+.avatar svg{width:100%;height:100%;border-radius:50%;display:block}
+.eyebrow{margin:0;font:700 .75rem var(--mono);letter-spacing:.18em;color:var(--roxo2)}
+.hero h1{font-size:clamp(2rem,5vw,3.3rem);font-style:italic;margin:4px 0 6px;letter-spacing:-.01em}
+.hero-stats{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:8px}
+.hs{background:rgba(11,8,19,.55);border:1px solid var(--bd);border-radius:16px;padding:12px 16px;backdrop-filter:blur(4px)}
+.hs .r{color:var(--mut);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em}
+.hs .v{font:700 1.9rem/1.15 var(--mono);color:var(--tx);font-variant-numeric:tabular-nums}
+.hs.ouro{border-color:var(--ouro)}.hs.ouro .v{color:var(--ouro)}
+h2.t{font-style:italic}
+.provas{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.bib{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:6px 14px;align-items:center;padding:16px 18px 16px 22px;border-radius:14px}
+.bib .furos{position:absolute;inset:0;pointer-events:none;border-radius:14px;
+background:radial-gradient(circle 4px at 9px 9px,var(--bg) 98%,transparent) ,radial-gradient(circle 4px at calc(100% - 9px) 9px,var(--bg) 98%,transparent),
+radial-gradient(circle 4px at 9px calc(100% - 9px),var(--bg) 98%,transparent),radial-gradient(circle 4px at calc(100% - 9px) calc(100% - 9px),var(--bg) 98%,transparent)}
+.bib.feita{background:#f1eeff;color:#1a1426;grid-template-columns:auto 1fr}
+.bib.feita .num{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;text-align:left;
+border-top:1px solid rgba(26,20,38,.14);padding-top:9px;margin-top:4px}
+.bib.feita .num div{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.bib.feita .num dd{font-size:1.05rem}
+.bib.feita .mut,.bib.feita p{color:#4a4268;margin:2px 0 0}
+.bib.prox{background:var(--card);border:1px solid var(--bd)}
+.bib h3{margin:3px 0 0;font:900 1.05rem/1.15 var(--titulo);font-style:italic;text-transform:uppercase}
+.bib p{margin:2px 0 0;font-size:.85rem}
+.logo{width:56px;height:56px;flex:none}
+.logo-img{width:56px;height:56px;flex:none;object-fit:contain;background:#fff;border-radius:12px;padding:4px}
+.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.bib .corpo{min-width:0}
+.tag{white-space:nowrap;display:inline-block;font:700 .62rem var(--mono);letter-spacing:.1em;padding:2px 8px;border-radius:999px;border:1px solid var(--roxo2);color:var(--roxo2)}
+.tag.ok{border-color:#4b32b0;color:#4b32b0}
+.conta{display:flex;flex-direction:column;align-items:center;color:var(--ouro);font:700 .7rem var(--mono);text-transform:uppercase}
+.conta .n{font-size:2rem;line-height:1;color:var(--ouro)}
+.num{margin:0;display:grid;gap:4px;text-align:right}
+.num div{display:flex;gap:8px;justify-content:flex-end;align-items:baseline}
+.num dt{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:#6a6190}
+.num dd{white-space:nowrap;margin:0;font:700 1rem var(--mono);color:#1a1426}
+.medalhas{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.medalha{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:18px 10px}
+.anel{width:104px;height:104px;border-radius:50%;display:grid;place-items:center;
+background:radial-gradient(circle at 50% 35%,#2b1f4d,#140d26);border:3px solid var(--ouro);box-shadow:0 0 0 5px rgba(255,210,63,.12),0 0 26px rgba(255,210,63,.18)}
+.anel span{font:700 1.1rem var(--mono);color:var(--tx);display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.anel small{font-size:.7rem;color:var(--mut);font-weight:400}
+.medalha .t1{font:900 .85rem var(--titulo);font-style:italic;text-transform:uppercase}
+.medalha .t2{font-size:.78rem;color:var(--mut)}
+@media(max-width:560px){.hero-in{grid-template-columns:1fr}.avatar{width:110px;height:110px}.bib{grid-template-columns:auto 1fr}.conta,.num{grid-column:1/-1;flex-direction:row;gap:8px}}
 @media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
 @media print{
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
@@ -875,14 +1032,15 @@ document.querySelectorAll('button.csv').forEach(function(b){
 
 
 def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
-           historico=None, metas=None, cobertura_ini=None):
+           historico=None, metas=None, cobertura_ini=None, corredor=None):
     """Devolve (html, nomes_dos_gráficos_omitidos).
 
     alertas: faixas de destaque no topo (ex.: chave perto de vencer).
     chave_vence: data de vencimento da chave, só informativa, no rodapé.
     historico: todas as atividades guardadas (para os recordes).
     metas: lista de metas do usuário com o progresso (ver metas.progresso).
-    cobertura_ini: data (texto ISO) em que começam os dados guardados."""
+    cobertura_ini: data (texto ISO) em que começam os dados guardados.
+    corredor: perfil, provas e soma do período (ver corredor.montar), ou None."""
     hoje = fim
     sem0 = segunda(hoje)
     disponiveis = (fim - ini).days + 1
@@ -905,6 +1063,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     blocos.append(cartao("Esta semana × semana passada × média",
                          "corridas · números da Garmin",
                          card_comparacao(comparar_semanas(atividades, hoje, ini))))
+    if corredor and (corredor["proximas"] or corredor["feitas"]):
+        blocos.append(provas_html(corredor))
     blocos.append(cartao("Tempo por esporte — semana atual",
                          f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse sobre uma fatia",
                          graf_anel(atividades, sem0, sem0 + dt.timedelta(days=6))))
@@ -955,7 +1115,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
                    linhas_at, esq=(0, 1, 2), datas=datas_at)
             if linhas_at else '<p class="sd">sem dado: nenhuma atividade no período.</p>')
     recs = recordes(historico if historico is not None else atividades)
-    t_mel = (tabela("recordes", ["Recorde", "Valor", "Detalhe", "Dia"], recs, esq=(0, 2))
+    t_mel = ((medalhas_html(recs) + tabela("recordes", ["Recorde", "Valor", "Detalhe", "Dia"], recs, esq=(0, 2)))
              if recs else "")
     t_d = (tabela("dados-diarios", ["Dia", "Passos", "Meta passos", "Treino", "Sono", "Profundo",
                                     "Leve", "REM", "FC repouso", "VFC", "FC mín–máx",
@@ -970,6 +1130,11 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     txt_hist = ("Histórico guardado desde " + dt.date.fromisoformat(cobertura_ini).strftime("%d/%m/%Y")
                 + ". Para ampliar: py garmin_painel.py --historico 365") if cobertura_ini \
         else "Histórico guardado neste computador."
+    if corredor and corredor["perfil"]:
+        cabecalho = hero_html(corredor, agora).replace("{ini}", ini.strftime("%d/%m/%Y")).replace("{fim}", fim.strftime("%d/%m/%Y"))
+    else:
+        cabecalho = (f'<div class="top"><h1>Painel Garmin</h1><p class="sub">Período: {ini.strftime("%d/%m/%Y")} a '
+                     f'{fim.strftime("%d/%m/%Y")} · atualizado em {agora.strftime("%d/%m/%Y %H:%M")}</p></div>')
     faixas = "".join(f'<div class="faixa" role="alert"><b>Atenção</b><span>{esc(a)}</span></div>'
                      for a in (alertas or []))
     faixas += ('<div class="faixa" id="velho" role="status" hidden><b>Dados antigos</b>'
@@ -991,9 +1156,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Painel Garmin</title><style>{CSS}{regras}</style></head>
 <body data-n="{padrao}" data-hoje="{hoje.isoformat()}" data-gerado="{agora.strftime('%Y-%m-%dT%H:%M:%S')}"><main>
-<div class="top"><h1>Painel Garmin</h1>
-<p class="sub">Período: {ini.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')} ·
-atualizado em {agora.strftime('%d/%m/%Y %H:%M')}</p></div>
+{cabecalho}
 
 {faixas}
 <div class="grid">{kpis}</div>

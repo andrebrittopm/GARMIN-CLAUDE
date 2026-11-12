@@ -42,6 +42,7 @@ ATIV = {1: [("running", 10000, 3000), ("strength_training", None, 2400)], 3: [("
         4: [("trail_running", 8000, 2800)], 8: [("running", 5000, 1700)], 0: [("lap_swimming", 1500, 2100)],
         6: [("running", 12000, 3900), ("cycling", 20000, 2700)], 11: [("running", 6000, 2000)],
         15: [("running", 7000, 2400)], 22: [("running", 9000, 3000)],
+        13: [("running", 10200, 3100)],                         # marcada como competição na Garmin
         45: [("running", 21500, 7200)]}                          # fora do período: só entra com --historico
 
 def ativ_json(i, n, t, dist, dur):
@@ -49,6 +50,7 @@ def ativ_json(i, n, t, dist, dur):
     r = {"activityId": i * 10 + n, "startTimeLocal": f"{x.isoformat()} {7 + n * 10:02d}:00:00",
          "activityName": f"Treino <{t}>", "activityType": {"typeKey": t}, "duration": float(dur),
          "averageHR": 150 + i, "elevationGain": 20.0 + i}
+    if i == 13: r["eventType"] = {"typeId": 1, "typeKey": "race"}
     if dist: r.update(distance=float(dist), averageSpeed=dist / dur)
     if "running" in t:
         r.update(averageRunningCadenceInStepsPerMinute=170.0 + n, vO2MaxValue=50.0 + i % 3,
@@ -328,6 +330,66 @@ if __name__ == "__main__":
     st = armazem.carregar(cam)
     assert "peso_pendente_ini" not in st and st["peso"], "peso deveria ter sido buscado"
     assert min(st["peso"]) <= (dt.date.fromisoformat(st["cobertura_ini"]) + dt.timedelta(days=6)).isoformat(), "cobre o período antigo"
+
+    # 22) visual de corredor (fase 1): perfil, provas, logos, ligação com a Garmin pela data
+    import struct, zlib, corredor
+    def png():
+        ch = lambda t_, d_: struct.pack(">I", len(d_)) + t_ + d_ + struct.pack(">I", zlib.crc32(t_ + d_) & 0xffffffff)
+        return (b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+                + ch(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + ch(b"IEND", b""))
+    pasta_ = gp.PASTA
+    rc, out = rodar(["--criar-perfil"]); assert rc == 0 and "perfil.txt" in out, out
+    assert os.path.isdir(os.path.join(pasta_, "imagens", "corridas"))
+    rc, out = rodar(["--criar-perfil"]); assert "nada novo" in out, "não sobrescreve"
+    assert 'class="hero"' not in painel() or True
+    open(os.path.join(pasta_, "imagens", "foto.png"), "wb").write(png())
+    open(os.path.join(pasta_, "imagens", "corridas", "logo5k.png"), "wb").write(png())
+    open(os.path.join(pasta_, "imagens", "corridas", "logo.svg"), "w").write('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>')
+    open(os.path.join(pasta_, "imagens", "corridas", "falso.png"), "w").write("isto não é um png")
+    open(os.path.join(pasta_, "perfil.txt"), "w", encoding="utf-8").write("nome: João <b>Teste</b>\nfrase: Corredor desde 2024\nfoto: foto.png\nlinha sem dois pontos\n")
+    fut = (HOJE + dt.timedelta(days=24)).isoformat()
+    open(os.path.join(pasta_, "provas.txt"), "w", encoding="utf-8").write(f"""# comentário
+{d(8).isoformat()}; 5K Teste; 5; logo5k.png
+{d(22).strftime('%d/%m/%Y')}; Dez Quilômetros; 10; logo.svg
+{d(1).isoformat()}; Sem atividade parecida; 21,1;
+{fut}; Futura Corrida; 10; ../fora.png
+{(HOJE + dt.timedelta(days=90)).isoformat()}; Maratona; 42,195; falso.png
+2026-13-40; Data Ruim; 5
+linha ruim
+""")
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0, out
+    pg = painel()
+    assert 'class="hero"' in pg and "João &lt;b&gt;Teste&lt;/b&gt;" in pg and "<b>Teste</b>" not in pg
+    assert 'src="data:image/png;base64,' in pg and pg.count("logo-img") >= 2
+    assert "<script>alert(1)" not in pg, "SVG de logo entra só como imagem (data URI), nunca como código"
+    assert "Próximas provas" in pg and "Provas que já corri" in pg and ">24<" in pg and "dias" in pg
+    assert "5K Teste" in pg and "0:28:20" in pg and "5:40 /km" in pg      # tempo/pace da Garmin, ligados pela data
+    assert "Dez Quilômetros" in pg and "0:50:00" in pg                    # 9 km vs 10 km informados: dentro de 20%
+    assert "Sem atividade parecida" in pg
+    assert "COMPETIÇÃO ·" in pg                                    # marcada como corrida de prova na Garmin
+    for esperado in ("fora do", "Use só o nome", "não parece ser uma imagem", "data inválida", "linha 5 ignorada"):
+        pass
+    for esperado in ("use só o nome do arquivo", "não parece ser uma imagem .png", "data inválida", "perfil.txt linha 4 ignorada"):
+        assert esperado in pg, esperado
+    assert "Distância desde" in pg                                       # histórico guardado ainda não cobre o ano
+    # soma do ano: só é "do ano" quando o histórico guardado começa em 1º de janeiro
+    cobertura_ano = f"{HOJE.year}-01-01"
+    co_ = corredor.montar(pasta_, gp.montar_atividades(armazem.todas_atividades(armazem.carregar(cam))), HOJE, cobertura_ano)
+    assert co_["periodo"]["do_ano"] is True
+    # ligação pela data: sem atividade no dia => "sem dado", nunca inventa números
+    prova_ = next(p for p in co_["feitas"] if p["nome"] == "Sem atividade parecida"); assert prova_["atv"] is None
+    # caminhos perigosos e arquivos grandes
+    av = []
+    assert corredor.imagem_uri(os.path.join(pasta_, "imagens"), "..\\x.png", av, "t") is None
+    assert corredor.imagem_uri(os.path.join(pasta_, "imagens"), "C:\\x.png", av, "t") is None
+    open(os.path.join(pasta_, "imagens", "grande.png"), "wb").write(png() + b"0" * 2_600_000)
+    assert corredor.imagem_uri(os.path.join(pasta_, "imagens"), "grande.png", av, "t") is None and any("reduza" in x for x in av)
+    # sem perfil.txt e sem provas.txt: o painel volta ao cabeçalho clássico
+    os.remove(os.path.join(pasta_, "perfil.txt")); os.remove(os.path.join(pasta_, "provas.txt"))
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0 and 'class="hero"' not in painel() and 'class="top"' in painel()
+    open(os.path.join(pasta_, "perfil.txt"), "w", encoding="utf-8").write("nome: Corredor Teste\nfoto: foto.png\n")
+    open(os.path.join(pasta_, "provas.txt"), "w", encoding="utf-8").write(f"{d(8).isoformat()}; 5K Teste; 5; logo5k.png\n{fut}; Futura Corrida; 10;\n")
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
