@@ -381,8 +381,8 @@ def atualizar_armazem(cli, dados, hoje, ini):
                           "na próxima atualização")
         ativ = buscar_atividades(cli, *jan)
         armazem.mesclar(dados, jan, resumos, sonos, vfc, ativ)
-        print(f"- resumos: {len(resumos)} · sono: {len(sonos)} · "
-              f"VFC: {len(vfc)} · atividades: {len(ativ)}")
+        print(f"- resumos: {len(resumos)} - sono: {len(sonos)} - "
+              f"VFC: {len(vfc)} - atividades: {len(ativ)}")
     armazem.fechar(dados, hoje, ini)
     try:
         armazem.salvar(caminho_armazem(), dados)
