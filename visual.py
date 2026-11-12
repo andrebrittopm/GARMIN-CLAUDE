@@ -5,6 +5,7 @@ gráfico (nunca vira zero) e aparece como "sem dado" no balão e nas tabelas.
 Ouro/amarelo é reservado para marcar atenção: meta de passos, média semanal
 do sono e o dia de hoje / semana atual. Nenhum esporte usa essa cor.
 """
+import contextlib
 import datetime as dt
 import html
 import math
@@ -18,6 +19,37 @@ from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, comparar_semana
                       totais_semana)
 
 W, PL, PR, PT, PB = 1000, 58, 14, 14, 62
+LIN_ATUAL = (16, 29, 47)
+LARG_CEL, PL_CEL, PB_CEL = 430, 54, 80   # largura/margens (unidades do desenho) da versão para celular
+LIN, LIN_CEL = (16, 29, 47), (19, 37, 58)  # posição das linhas de rótulo sob as colunas
+OPCOES_CEL = (7, 14)                # períodos oferecidos no celular
+GRAFICO_CEL_PX = 700                # abaixo disso o navegador usa a versão para celular
+
+
+@contextlib.contextmanager
+def dimensoes(w, pl, pb=None, lin=None):
+    """Desenha os gráficos com outra largura (celular), sem mexer nas funções."""
+    global W, PL, PB, LIN_ATUAL
+    ant = (W, PL, PB, LIN_ATUAL)
+    W, PL = w, pl
+    if pb is not None:
+        PB = pb
+    if lin is not None:
+        LIN_ATUAL = lin
+    try:
+        yield
+    finally:
+        W, PL, PB, LIN_ATUAL = ant
+
+
+def _curto(p, m):
+    """Número grande em coluna estreita: 11.816 vira 11,8k (o balão mostra o valor exato)."""
+    return f"{p / 1000:.1f}k".replace(".", ",") if slot(m) < 58 and p >= 10000 else num(p)
+
+
+def mostra_valores(m):
+    """A linha de números sob as colunas só cabe quando cada coluna é larga."""
+    return slot(m) >= 48
 OPCOES = (7, 14, 30)       # períodos que o seletor oferece
 PADRAO = 14
 MAX_SEMANAS = 12
@@ -94,15 +126,29 @@ def tip(titulo, *linhas):
 
 
 def rotulos_dias(dias, hoje):
-    """(linha1, linha2, destaque) por dia; None onde o rótulo é omitido."""
+    """(linha1, linha2, destaque) por dia; None onde o rótulo é omitido.
+    O nível de detalhe depende da largura de cada coluna (computador x celular)."""
     n, out, primeiro = len(dias), [], True
+    s = slot(n)
     for i, d in enumerate(dias):
-        if n > 16 and (n - 1 - i) % 2:
+        resto = n - 1 - i
+        if s >= 48:
+            pular = n > 16 and resto % 2 != 0     # computador, período longo: um sim, um não
+        elif s >= 22:
+            pular = False                          # celular, 14 dias
+        else:
+            pular = resto % 3 != 0                 # coluna muito estreita: um a cada três
+        if pular:
             out.append(None)
             continue
-        rot = f"{d.day:02d}/{d.month:02d}" if (d.day == 1 or primeiro) else f"{d.day:02d}"
+        if s >= 48:
+            rot = f"{d.day:02d}/{d.month:02d}" if (d.day == 1 or primeiro) else f"{d.day:02d}"
+            linha1 = DIAS_SEMANA[d.weekday()]
+        else:                                   # coluna estreita: inicial do dia + número
+            rot = f"{d.day:02d}"
+            linha1 = DIAS_SEMANA[d.weekday()][0]
         primeiro = False
-        out.append((DIAS_SEMANA[d.weekday()], rot, d == hoje))
+        out.append((linha1, rot, d == hoje))
     return out
 
 
@@ -119,10 +165,10 @@ def moldura(h, lo, hi, marcas, fmt, rotulos, valores):
         if r is None:
             continue
         cl = "xl hoje" if r[2] else "xl"
-        out.append(f'<text class="{cl}" x="{cx(i, m):.1f}" y="{yb + 16}" text-anchor="middle">{esc(r[0])}</text>')
-        out.append(f'<text class="{cl}" x="{cx(i, m):.1f}" y="{yb + 29}" text-anchor="middle">{esc(r[1])}</text>')
+        out.append(f'<text class="{cl}" x="{cx(i, m):.1f}" y="{yb + LIN_ATUAL[0]}" text-anchor="middle">{esc(r[0])}</text>')
+        out.append(f'<text class="{cl}" x="{cx(i, m):.1f}" y="{yb + LIN_ATUAL[1]}" text-anchor="middle">{esc(r[1])}</text>')
         if valores[i]:
-            out.append(f'<text class="vl" x="{cx(i, m):.1f}" y="{yb + 47}" text-anchor="middle">{esc(valores[i])}</text>')
+            out.append(f'<text class="vl" x="{cx(i, m):.1f}" y="{yb + LIN_ATUAL[2]}" text-anchor="middle">{esc(valores[i])}</text>')
     return "".join(out)
 
 
@@ -234,9 +280,9 @@ def graf_treino(dias, acts, hoje):
                       + (f" · {km(e['dist'])}" if e["dist"] else "")
                       for g_, e in sorted(por[k].items(), key=lambda kv: ordem.index(kv[0]))]
             tips.append(tip(data_br(k), *linhas, f"Total|{minutos(totais[i]) if totais[i] else SEM_DADO}"))
-            valores.append(f"{round(totais[i] / 60)} min" if totais[i] else "")
+            valores.append((f"{round(totais[i] / 60)}" + (" min" if slot(m) >= 66 else "")) if totais[i] else "")
     leg = "".join(chip(cor_esporte(g_), rotulo_esporte(g_)) for g_, _, _ in ESPORTES if g_ in usados)
-    if m > 16:
+    if not mostra_valores(m):
         valores = [""] * m
     base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", rotulos_dias(dias, hoje), valores)
     return (f'<div class="legrow">{leg}<span class="mut">minutos de treino por dia</span></div>'
@@ -296,7 +342,7 @@ def graf_sono(dias, todos, hoje):
                       f'<span class="mut">({len(semanas[ini_s])} noites com dado)</span></li>')
     leg = "".join(chip(c_, n_) for n_, c_ in SONO.values()) + \
         '<span class="chip"><i class="trac"></i>média da semana</span>'
-    if m > 16:
+    if not mostra_valores(m):
         valores = [""] * m
     base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}h", rotulos_dias(dias, hoje), valores)
     return (f'<div class="legrow">{leg}</div>'
@@ -331,7 +377,7 @@ def graf_barras_meta(dias, todos, hoje, campo, campo_meta, nome, nome_meta, rotu
             corpo.append(f'<line class="meta" x1="{cx(i, m) - bw / 2 - 5:.1f}" x2="{cx(i, m) + bw / 2 + 5:.1f}" y1="{y:.1f}" y2="{y:.1f}"/>')
         tips.append(tip(data_br(k), f"{nome}|{num(p) if p else SEM_DADO}",
                         f"{nome_meta}|{num(mt) if mt else SEM_DADO}"))
-        valores.append(num(p) if p and m <= 16 else "")
+        valores.append(_curto(p, m) if p and mostra_valores(m) else "")
     leg = chip(ROXO, nome.lower()) + (
         f'<span class="chip"><i class="traco"></i>{esc(nome_meta.lower())}</span>' if tem_meta else "")
     base = moldura(h, lo, hi, marcas, lambda t: num(t), rotulos_dias(dias, hoje), valores)
@@ -370,7 +416,7 @@ def graf_bb(dias, todos, hoje):
         corpo.append(f'<rect x="{cx(i, m) - bw / 2:.1f}" y="{y1:.1f}" width="{bw:.1f}" '
                      f'height="{max(y2 - y1, 5):.1f}" rx="{min(7, bw / 2):.1f}" fill="url(#gbb)"/>')
         tips.append(tip(data_br(k), f"Máximo|{b}", f"Mínimo|{a}"))
-        valores.append(f"{a}–{b}" if m <= 16 else "")
+        valores.append(f"{a}–{b}" if mostra_valores(m) else "")
     defs = (f'<linearGradient id="gbb" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="{ROXO_CLARO}"/><stop offset="1" stop-color="{ROXO}"/></linearGradient>')
     base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", rotulos_dias(dias, hoje), valores)
@@ -408,7 +454,7 @@ def graf_linha(dias, todos, hoje, campo, unidade, nome, casas=0, pad_min=4):
         else:
             corpo.append(f'<circle class="sep" cx="{p[0]:.1f}" cy="{p[1]:.1f}" r="5" fill="{ROXO_CLARO}"/>')
             tips.append(tip(data_br(k), f"{nome}|{num(vals[i], casas)} {unidade}"))
-            valores.append(num(vals[i], casas) if m <= 16 else "")
+            valores.append(num(vals[i], casas) if mostra_valores(m) else "")
     base = moldura(h, lo, hi, marcas, lambda t: num(t, casas), rotulos_dias(dias, hoje), valores)
     return svg(h, base + "".join(corpo) + zonas(h, tips), f"{nome} por dia")
 
@@ -416,14 +462,18 @@ def graf_linha(dias, todos, hoje, campo, unidade, nome, casas=0, pad_min=4):
 # ------------------------------------------- gráficos por semana (novos) ---
 def semanas_lista(ini, hoje):
     s, out = segunda(hoje), []
-    while s >= segunda(ini) and len(out) < MAX_SEMANAS:
+    maximo = MAX_SEMANAS if W >= 800 else 8
+    while s >= segunda(ini) and len(out) < maximo:
         out.append(s)
         s -= dt.timedelta(days=7)
     return list(reversed(out))
 
 
 def _rot_sem(semanas, hoje):
-    return [("sem", f"{s.day:02d}/{s.month:02d}", s == segunda(hoje)) for s in semanas]
+    folga = slot(len(semanas)) >= 42
+    n = len(semanas)
+    return [("sem", f"{s.day:02d}/{s.month:02d}", s == segunda(hoje)) if (folga or (n - 1 - i) % 2 == 0) else None
+            for i, s in enumerate(semanas)]
 
 
 def graf_dist_semana(atividades, ini, hoje):
@@ -443,7 +493,7 @@ def graf_dist_semana(atividades, ini, hoje):
             corpo.append(f'<path d="{barra(cx(i, m) - bw / 2, y0 - alt, bw, alt)}" fill="{cor_esporte("corrida")}"/>')
             tips.append(tip(titulo, f"Distância|{km(t['dist_m'])}", f"Corridas|{t['n']}",
                             f"Tempo|{hms(t['dur_s'])}", f"Pace médio|{pace(t['pace'])}"))
-            valores.append(f"{num(t['dist_m'] / 1000, 1)} km")
+            valores.append(f"{num(t['dist_m'] / 1000, 1)} km" if slot(m) >= 56 else "")
         else:
             tips.append(tip(titulo, "Corridas|0"))
             valores.append("")
@@ -490,7 +540,7 @@ def graf_zonas_semana(atividades, ini, hoje):
             acc += alt
         tips.append(tip(titulo, *[f"{ZONAS[k][0]}|{hms(z[k])}" for k in range(5)],
                         f"Total|{hms(sum(z))}"))
-        valores.append(f"{round(sum(z) / 60)} min")
+        valores.append(f"{round(sum(z) / 60)} min" if slot(m) >= 56 else "")
     base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", _rot_sem(semanas, hoje), valores)
     leg = "".join(chip(c_, n_) for n_, c_ in ZONAS) + \
         '<span class="mut">minutos por zona de FC, atividades com dado de zona</span>'
@@ -776,7 +826,9 @@ def detalhe_html(it, priv):
     mapa = rota_real_svg(rotas_mod.projetar(it["pts"]), "d" + str(it["id"]), 420, 300,
                          rotulo="Rota de " + data_br(it["data"]))
     perfil = perfil_elevacao_svg(alt)
-    perfil_html = (f'<h3 class="det-h">Perfil de elevação</h3>{perfil}' if perfil else
+    perfil_cel = perfil_elevacao_svg(alt, LARG_CEL, 230)
+    perfil_html = (f'<h3 class="det-h">Perfil de elevação</h3><div class="dv desk">{perfil}</div>'
+                   f'<div class="dv mob">{perfil_cel}</div>' if perfil else
                    '<p class="sd">Perfil de elevação: sem dado (será baixado nas próximas atualizações).</p>')
     nota = (f"o começo e o fim ficam ocultos (primeiros e últimos {priv} m)" if priv
             else "atenção: sem corte de privacidade")
@@ -1059,6 +1111,17 @@ dialog#detalhe::backdrop{background:rgba(5,3,12,.78)}
 .det-mapa svg{width:min(100%,340px);height:auto}
 .det-mapa .sub{margin:4px 0 0}
 .det-h{font:900 .8rem var(--titulo);text-transform:uppercase;font-style:italic;color:var(--roxo2);margin:10px 0 4px}
+
+.dv.mob,.per.mob{display:none}
+@media (max-width:700px){
+.dv.desk{display:none}.dv.mob{display:block}
+.per.mob .ch text,.dv.mob .ch text{font-size:14px}.per.mob .ch .yl,.dv.mob .ch .yl{font-size:13px}
+.per.mob .ch .vl,.dv.mob .ch .vl{font-size:14px}.per.mob .ch .desc{font-size:14px}
+.grid{grid-template-columns:repeat(2,1fr)}.kpi .v{font-size:1.7rem}.kpi.s .v{font-size:1.25rem}
+.card{padding:14px 12px}main{padding:18px 10px 40px}
+.ed-abas{flex-wrap:wrap}.seletor button,.btn-editar,.ed-btn{min-height:40px}
+.hero{padding:22px 14px}.hero-in{gap:14px}
+}
 @media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
 @media print{
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
@@ -1111,7 +1174,8 @@ function periodo(n){
 }
 document.querySelectorAll('.seletor button[data-n]').forEach(function(b){
   b.addEventListener('click',function(){periodo(+b.getAttribute('data-n'));});});
-periodo(+corpo.getAttribute('data-n'));
+var n0=+corpo.getAttribute('data-n');if(window.matchMedia&&matchMedia('(max-width:700px)').matches)n0=7;
+periodo(n0);
 
 // faixa de "dados velhos": compara a hora da última atualização com a hora de agora
 (function(){
@@ -1350,18 +1414,32 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     if secao_r:
         blocos.append(secao_r)
     blocos.append(cartao("Tempo por esporte — semana atual",
-                         f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse sobre uma fatia",
+                         f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse (ou toque) sobre uma fatia",
                          graf_anel(atividades, sem0, sem0 + dt.timedelta(days=6))))
 
     def por_periodo(fn):
-        """Gera o gráfico para cada período; None se não há dado em nenhum."""
-        partes = {n: fn(janela(fim, n)) for n in opcoes}
-        if all(v is None for v in partes.values()):
+        """Gera o gráfico para cada período, nas versões computador e celular;
+        None se não há dado em nenhum."""
+        partes = {("desk", n): fn(janela(fim, n)) for n in opcoes}
+        with dimensoes(LARG_CEL, PL_CEL, PB_CEL, LIN_CEL):
+            for n in opcoes:
+                if n in OPCOES_CEL:
+                    partes[("mob", n)] = fn(janela(fim, n))
+        if all(x is None for x in partes.values()):
             return None
         return "".join(
-            f'<div class="per" data-n="{n}">'
-            + (v if v is not None else f'<p class="sd">sem dado nos últimos {n} dias.</p>')
-            + "</div>" for n, v in partes.items())
+            f'<div class="per {versao}" data-n="{n}">'
+            + (x if x is not None else f'<p class="sd">sem dado nos últimos {n} dias.</p>')
+            + "</div>" for (versao, n), x in partes.items())
+
+    def duas_versoes(fn):
+        """Gráfico que não depende do período: uma versão para computador e outra para celular."""
+        desk = fn()
+        if desk is None:
+            return None
+        with dimensoes(LARG_CEL, PL_CEL, PB_CEL, LIN_CEL):
+            mob = fn()
+        return f'<div class="dv desk">{desk}</div><div class="dv mob">{mob}</div>'
 
     def add(nome, titulo, sub, conteudo):
         if conteudo is None:
@@ -1369,7 +1447,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
         else:
             blocos.append(cartao(titulo, sub, conteudo))
 
-    sub = "passe o mouse sobre um dia · use o seletor de período acima"
+    sub = "passe o mouse (ou toque) sobre um dia · use o seletor de período acima"
     add("Treino por dia", "Treino por dia", sub, por_periodo(lambda j: graf_treino(j, atividades, hoje)))
     add("Sono", "Sono por noite — profundo, leve e REM", sub, por_periodo(lambda j: graf_sono(j, dias, hoje)))
     add("Passos", "Passos por dia", sub + " · traço dourado = meta da Garmin",
@@ -1387,10 +1465,10 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     add("Peso", "Peso (kg)", sub + " · cada ponto é uma medição, sem ligar dias sem medição",
         por_periodo(lambda j: graf_linha(j, dias, hoje, "peso", "kg", "Peso", casas=1, pad_min=1)))
     add("Distância por semana", "Distância de corrida por semana",
-        f"últimas {MAX_SEMANAS} semanas no máximo · passe o mouse sobre uma semana",
-        graf_dist_semana(atividades, ini, hoje))
+        f"últimas {MAX_SEMANAS} semanas no máximo · passe o mouse (ou toque) sobre uma semana",
+        duas_versoes(lambda: graf_dist_semana(atividades, ini, hoje)))
     add("Zonas de FC por semana", "Tempo por zona de frequência cardíaca",
-        "por semana · passe o mouse sobre uma semana", graf_zonas_semana(atividades, ini, hoje))
+        "por semana · passe o mouse (ou toque) sobre uma semana", duas_versoes(lambda: graf_zonas_semana(atividades, ini, hoje)))
 
     semanas, linhas_at, datas_at, linhas_d, datas_d = tabelas(dias, atividades, ini, hoje)
     t_sem = tabela("semanas", ["Semana", "Corridas", "Distância", "Tempo", "Pace médio"], semanas)
@@ -1436,7 +1514,11 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
                       '<div id="det-conteudo"></div></div></dialog>' + templates) if templates else ""
     botoes = "".join(f'<button type="button" data-n="{n}" aria-pressed="{"true" if n == padrao else "false"}">{n} dias</button>'
                      for n in opcoes)
-    regras = "".join(f'body[data-n="{n}"] .per[data-n="{n}"]{{display:block}}' for n in opcoes)
+    regras = ("@media (min-width:%dpx){" % (GRAFICO_CEL_PX + 1)
+              + "".join(f'body[data-n="{n}"] .per.desk[data-n="{n}"]{{display:block}}' for n in opcoes) + "}"
+              + "@media (max-width:%dpx){" % GRAFICO_CEL_PX
+              + "".join(f'body[data-n="{n}"] .per.mob[data-n="{n}"]{{display:block}}' for n in opcoes if n in OPCOES_CEL)
+              + '.seletor button[data-n="30"]{display:none}}')
 
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">

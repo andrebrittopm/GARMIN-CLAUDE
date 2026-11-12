@@ -717,6 +717,125 @@ linha ruim
         assert rg3[k0]["pts"] == pts_antes[k0] and rg3[k0].get("falhou") == 1 and "alt" not in rg3[k0]
         Estado.zip_por_id = None
 
+    # 29) notificações do Windows (o disparo real só existe no Windows; aqui testamos a lógica)
+    import notificacao, base64 as _b
+    args, env = notificacao.construir("Título; $(calc) 'x'", 'Texto "perigoso" `ls` ' + "y" * 400, "erro")
+    cod = _b.b64decode(args[args.index("-EncodedCommand") + 1]).decode("utf-16-le")
+    assert "perigoso" not in cod and "calc" not in cod, "o texto nunca vai dentro do comando"
+    assert len(env["PAINEL_NOTIF_TEXTO"]) <= 230 and len(env["PAINEL_NOTIF_TITULO"]) <= 60 and env["PAINEL_NOTIF_NIVEL"] == "erro"
+    assert notificacao.construir("a", "b", "qualquer")[1]["PAINEL_NOTIF_NIVEL"] == "info"
+    assert notificacao.notificar("a", "b") is False, "fora do Windows não faz nada"
+    rc, out = rodar(["--testar-notificacao"]); assert rc == 0 and "só funcionam no Windows" in out
+    disparos = []
+    notif_original = notificacao.notificar
+    gp.notificacao.notificar = lambda tit, txt, nivel="info": (disparos.append((tit, txt, nivel)), True)[1]
+    def cfg_(): return configuracao.carregar(pasta_)
+    c_ = cfg_(); c_.pop("notif_falha_em", None); c_.pop("notif_chave_dia", None); c_.pop("chave_vence", None); configuracao.salvar(pasta_, c_)
+    orig_chave = gp.ler_chave
+    def chave_ruim(): raise gp.ErroCofre("Não achei a chave no cofre (teste).")
+    gp.ler_chave = chave_ruim
+    rc, out = rodar(["--sem-abrir"]); assert rc == 1 and disparos == [], "sem --notificar nunca avisa"
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert rc == 1 and len(disparos) == 1 and disparos[0][2] == "erro" and "Não achei a chave" in disparos[0][1]
+    assert "SEGREDO" not in json.dumps(disparos) and CHAVE_FALSA not in json.dumps(disparos)
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert len(disparos) == 1, "não repete antes de 12 h"
+    c_ = cfg_(); c_["notif_falha_em"] = (dt.datetime.now() - dt.timedelta(hours=13)).isoformat(); configuracao.salvar(pasta_, c_)
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert len(disparos) == 2, "passadas 12 h, avisa de novo"
+    def erro_estranho(): raise RuntimeError("SEGREDO-999 não pode aparecer")
+    gp.ler_chave = erro_estranho; c_ = cfg_(); c_.pop("notif_falha_em"); configuracao.salvar(pasta_, c_)
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert rc == 2 and "SEGREDO" not in json.dumps(disparos[-1]) and "RuntimeError" in disparos[-1][1]
+    gp.ler_chave = orig_chave
+    disparos.clear()
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert rc == 0 and disparos == [], "tudo certo: silêncio"
+    configuracao.definir_vencimento(pasta_, (HOJE + dt.timedelta(days=5)).isoformat())
+    rc, out = rodar(["--sem-abrir"]); assert disparos == [], "sem --notificar nunca avisa"
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert len(disparos) == 1 and disparos[0][2] == "aviso" and "vence em 5 dias" in disparos[0][1]
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert len(disparos) == 1, "a chave só avisa uma vez por dia"
+    c_ = cfg_(); c_["notif_chave_dia"] = (HOJE - dt.timedelta(days=1)).isoformat(); configuracao.salvar(pasta_, c_)
+    rc, out = rodar(["--sem-abrir", "--notificar"]); assert len(disparos) == 2, "no dia seguinte avisa de novo"
+    configuracao.remover_vencimento(pasta_); notificacao.notificar = notif_original
+    assert b"--notificar" in open(os.path.join(os.path.dirname(__file__), "..", "atualizar_silencioso.bat"), "rb").read(), "a tarefa agendada usa --notificar"
+
+    # 30) atualizar o PROGRAMA pelo GitHub (servidor falso): lista permitida, sintaxe, backup, desfazer
+    import atualizador, tempfile
+    def zip_repo(arquivos, raiz="GARMIN-CLAUDE-abc"):
+        b_ = io.BytesIO()
+        with zipfile.ZipFile(b_, "w") as z_:
+            for n_, c_ in arquivos.items(): z_.writestr(f"{raiz}/{n_}" if raiz else n_, c_)
+        return b_.getvalue()
+    VALIDO = {"garmin_painel.py": "print('versao nova')\n", "novo_modulo.py": "X = 1\n", "GUIA.md": "# guia novo\n",
+              "atualizar_programa.bat": "@echo off\r\n", "requirements-fit.txt": "garmin-fit-sdk==1\n",
+              "perfil.txt": "nome: HACKER\n", "provas.txt": "x", "dados_brutos.json": "{}", "rotas.json": "{}",
+              "tests/test_x.py": "1/0", "../evil.py": "import os", "programa.exe": "MZ", "libs/garmin_fit_sdk/x.py": "x",
+              ".github/workflows/t.yml": "x", "config_painel.json": "{}", "Maiuscula.py": "x = 1"}
+    estado_gh = {"zip": zip_repo(VALIDO), "sha": "a" * 40, "status": 200}
+    class GH(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if estado_gh["status"] != 200:
+                self.send_response(estado_gh["status"]); self.end_headers(); return
+            if "/commits/" in self.path:
+                b_ = json.dumps({"sha": estado_gh["sha"], "commit": {"message": "Versão nova\n\ncorpo", "committer": {"date": "2026-11-12T10:00:00Z"}}}).encode()
+            else:
+                assert estado_gh["sha"] in self.path, "o ZIP é pedido pelo sha, não pelo nome do ramo"; b_ = estado_gh["zip"]
+            self.send_response(200); self.send_header("Content-Length", str(len(b_))); self.end_headers(); self.wfile.write(b_)
+    srv_gh = HTTPServer(("127.0.0.1", 0), GH); threading.Thread(target=srv_gh.serve_forever, daemon=True).start()
+    atualizador.API = atualizador.CODELOAD = f"http://127.0.0.1:{srv_gh.server_port}"; atualizador.HOSTS_OK = {"127.0.0.1"}
+    prog = tempfile.mkdtemp(); saida_ = []
+    for n_, c_ in {"garmin_painel.py": "print('versao antiga')\n", "GUIA.md": "# guia antigo\n", "perfil.txt": "nome: Eu\n"}.items():
+        open(os.path.join(prog, n_), "w", encoding="utf-8").write(c_)
+    log_ = lambda *x: saida_.append(" ".join(map(str, x)))
+    # simulação: lista, não altera
+    assert atualizador.executar(prog, simular=True, entrada=lambda p: "s", log=log_) == 0
+    assert open(os.path.join(prog, "garmin_painel.py"), encoding="utf-8").read() == "print('versao antiga')\n" and not os.path.exists(os.path.join(prog, "versao.txt"))
+    txt_ = "\n".join(saida_); assert "alterado  garmin_painel.py" in txt_ and "novo      novo_modulo.py" in txt_ and "simulação" in txt_
+    for proibido in ("perfil.txt", "provas.txt", "dados_brutos", "rotas.json", "evil", "programa.exe", "test_x", "libs", "workflows", "config_painel", "Maiuscula"):
+        assert proibido not in txt_, f"{proibido} não pode ser listado"
+    # cancelar
+    saida_.clear(); atualizador.executar(prog, entrada=lambda p: "n", log=log_)
+    assert "Cancelado" in "\n".join(saida_) and "antiga" in open(os.path.join(prog, "garmin_painel.py"), encoding="utf-8").read()
+    # aplicar
+    saida_.clear(); atualizador.executar(prog, entrada=lambda p: "", log=log_)
+    assert open(os.path.join(prog, "garmin_painel.py"), encoding="utf-8").read() == VALIDO["garmin_painel.py"]
+    assert os.path.exists(os.path.join(prog, "novo_modulo.py")) and os.path.exists(os.path.join(prog, "atualizar_programa.bat"))
+    assert open(os.path.join(prog, "perfil.txt"), encoding="utf-8").read() == "nome: Eu\n", "dados do usuário intactos"
+    for nao in ("provas.txt", "dados_brutos.json", "rotas.json", "programa.exe", "Maiuscula.py", "config_painel.json"): assert not os.path.exists(os.path.join(prog, nao)), nao
+    assert not os.path.exists(os.path.join(prog, "evil.py")) and not os.path.exists(os.path.join(prog, "..", "evil.py")) and not os.path.exists(os.path.join(prog, "libs")) and not os.path.exists(os.path.join(prog, "tests"))
+    ver = atualizador.versao_atual(prog); assert ver["sha"] == "a" * 40 and "garmin_painel.py" in ver["arquivos"] and ver["mensagem"] == "Versão nova"
+    bk = os.listdir(os.path.join(prog, "backup_programa")); assert len(bk) == 1 and "antiga" in open(os.path.join(prog, "backup_programa", bk[0], "garmin_painel.py"), encoding="utf-8").read()
+    assert not any(n.endswith(".novo") for n in os.listdir(prog)), "sem restos temporários"
+    # já está na versão: nada a fazer
+    saida_.clear(); atualizador.executar(prog, entrada=lambda p: "s", log=log_); assert "já está nessa versão" in "\n".join(saida_)
+    # desfazer
+    atualizador.desfazer(prog, log=lambda *x: None)
+    assert "antiga" in open(os.path.join(prog, "garmin_painel.py"), encoding="utf-8").read() and atualizador.versao_atual(prog) is None
+    assert not os.path.exists(os.path.join(prog, "novo_modulo.py")) and not os.path.exists(os.path.join(prog, "atualizar_programa.bat")), "o que a atualização criou é removido"
+    assert open(os.path.join(prog, "perfil.txt"), encoding="utf-8").read() == "nome: Eu\n"
+    try: atualizador.desfazer(prog, log=lambda *x: None); raise SystemExit("sem cópia para restaurar")
+    except atualizador.ErroAtualizador: pass
+    # versões ruins: nada muda
+    antes_ = {n: open(os.path.join(prog, n), "rb").read() for n in os.listdir(prog) if os.path.isfile(os.path.join(prog, n))}
+    estado_gh["sha"] = "b" * 40
+    casos = ((zip_repo({**VALIDO, "novo_modulo.py": "def quebrado(:\n"}), "defeito"), (zip_repo({"GUIA.md": "x"}), "garmin_painel.py"),
+             (b"isto nao e zip", "não é um ZIP"), (zip_repo({**VALIDO, "grande.py": "x = 1\n" + "#" * 2_100_000}), "grande demais"))
+    for zb, esperado in casos:
+        estado_gh["zip"] = zb
+        try: atualizador.executar(prog, entrada=lambda p: "s", log=lambda *x: None); raise SystemExit(f"deveria recusar: {esperado}")
+        except atualizador.ErroAtualizador as e_: assert esperado in str(e_), (esperado, str(e_))
+    depois_ = {n: open(os.path.join(prog, n), "rb").read() for n in os.listdir(prog) if os.path.isfile(os.path.join(prog, n))}
+    assert antes_ == depois_ and not os.listdir(os.path.join(prog, "backup_programa")), "versão ruim não altera nada nem cria cópia"
+    estado_gh["status"] = 404
+    try: atualizador.executar(prog, log=lambda *x: None); raise SystemExit("404")
+    except atualizador.ErroAtualizador as e_: assert "404" in str(e_)
+    estado_gh["status"] = 200
+    # endereço fora da lista: recusado antes de qualquer pedido
+    atualizador.HOSTS_OK = {"api.github.com"}
+    try: atualizador.ultimo_commit(); raise SystemExit("host")
+    except atualizador.ErroAtualizador as e_: assert "não permitido" in str(e_)
+    srv_gh.shutdown(); srv_gh.server_close()
+    atualizador.API, atualizador.CODELOAD, atualizador.HOSTS_OK = "https://api.github.com", "https://codeload.github.com", {"api.github.com", "codeload.github.com"}
+    assert b"--atualizar-programa" in open(os.path.join(os.path.dirname(__file__), "..", "atualizar_programa.bat"), "rb").read()
+    rc, out = rodar(["--desfazer-atualizacao"]); assert rc == 1 and "ERRO" in out and "Não há cópia" in out, out
+
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
     print("TODOS OS TESTES PASSARAM")

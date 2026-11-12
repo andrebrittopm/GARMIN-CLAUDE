@@ -182,7 +182,7 @@ def perfil_elevacao_svg(pts, w=860, h=230):
     Só números do arquivo da Garmin; passe o mouse para ver cada ponto."""
     if len(pts) < 2:
         return ""
-    pl, pr, pt, pb = 46, 14, 12, 30
+    pl, pr, pt, pb = (46 if w >= 700 else 40), 14, 12, 30
     ds = [p[0] for p in pts]
     als = [p[1] for p in pts]
     dmax = (max(ds) or 1)
@@ -197,7 +197,7 @@ def perfil_elevacao_svg(pts, w=860, h=230):
         out.append(f'<line class="gl" x1="{pl}" x2="{w - pr}" y1="{y:.1f}" y2="{y:.1f}"/>'
                    f'<text class="yl" x="{pl - 6}" y="{y + 4:.1f}" text-anchor="end">{t:g}</text>')
     km_max = dmax / 1000
-    passo_km = next((s for s in (0.5, 1, 2, 5, 10, 20) if km_max / s <= 8), 20)
+    passo_km = next((s for s in (0.5, 1, 2, 5, 10, 20) if km_max / s <= (8 if w >= 700 else 4)), 20)
     k = 0.0
     while k <= km_max + 1e-6:
         x = X(k * 1000)

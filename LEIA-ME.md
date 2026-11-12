@@ -26,6 +26,8 @@ Guia completo em português (para quem não programa): **GUIA.md**.
 - Visual de corredor (foto, provas, logos): `py garmin_painel.py --criar-perfil` e edite `perfil.txt` e `provas.txt`
 - Rotas: instale `requirements-fit.txt` (ver GUIA.md) e rode `py garmin_painel.py --rotas`; privacidade: `--privacidade-metros N`
 - Editar provas e perfil pelo painel: dois cliques em `abrir_painel.bat` (ou `py garmin_painel.py --servir`)
+- Atualizar o programa (com confirmação): dois cliques em `atualizar_programa.bat`; desfazer: `--desfazer-atualizacao`
+- Testar avisos do Windows: `py garmin_painel.py --testar-notificacao`
 - Conferir tudo (chave, token, conexão, dados, agendamento): `py garmin_painel.py --diagnostico`
 - Avisar antes de a chave vencer: `py garmin_painel.py --chave-vence AAAA-MM-DD`
 

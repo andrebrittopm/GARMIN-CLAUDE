@@ -14,3 +14,5 @@ imagens/
 libs/
 rotas.json
 rotas.json.tmp
+backup_programa/
+versao.txt

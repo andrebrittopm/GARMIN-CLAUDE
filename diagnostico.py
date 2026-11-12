@@ -55,6 +55,10 @@ def executar():
     ok(f"Python {sys.version.split()[0]}")
     pasta = gp.pasta_dados()
     ok(f"Pasta dos dados: {pasta}")
+    import atualizador
+    ver = atualizador.versao_atual(gp.PASTA)
+    ok(f"Versão do programa: {str(ver.get('sha', ''))[:7]} (de {ver.get('data', '?')})" if ver else
+       "Versão do programa: não registrada (aparece depois da primeira --atualizar-programa)")
 
     # --- chave
     chave = None

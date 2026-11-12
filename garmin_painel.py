@@ -23,6 +23,9 @@ Uso:
     python garmin_painel.py --meta km-mes=50   # sua meta (veja --ajuda)
     python garmin_painel.py --historico 365    # busca mais histórico (recordes)
     python garmin_painel.py --teste-rota       # confere se dá para ler a trilha de GPS
+    python garmin_painel.py --testar-notificacao   # mostra um aviso de teste no Windows
+    python garmin_painel.py --atualizar-programa   # baixa a versão nova do programa (pede confirmação)
+    python garmin_painel.py --desfazer-atualizacao # volta à versão anterior do programa
 """
 import argparse
 import base64
@@ -39,10 +42,12 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
+import atualizador  # noqa: E402
 import configuracao  # noqa: E402
 import corredor  # noqa: E402
 import diagnostico  # noqa: E402
 import metas  # noqa: E402
+import notificacao  # noqa: E402
 import rotas  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
                    ler_chave, ler_token_cache)
@@ -619,6 +624,44 @@ def competicoes_sem_logo():
             for p in (co["feitas"] if co else []) if p.get("origem") == "garmin"]
 
 
+INTERVALO_AVISO_FALHA_H = 12      # não repete o aviso de falha em menos de 12 horas
+
+
+def avisar_falha(a, mensagem):
+    """Aviso do Windows quando a atualização AUTOMÁTICA falha (no máximo a cada 12 h)."""
+    if not getattr(a, "notificar", False):
+        return
+    try:
+        pasta = pasta_dados()
+        cfg = configuracao.carregar(pasta)
+        agora = dt.datetime.now()
+        ult = cfg.get("notif_falha_em")
+        if ult and (agora - dt.datetime.fromisoformat(ult)).total_seconds() < INTERVALO_AVISO_FALHA_H * 3600:
+            return
+        if notificacao.notificar("Painel Garmin: a atualização falhou", mensagem, "erro"):
+            cfg["notif_falha_em"] = agora.isoformat(timespec="seconds")
+            configuracao.salvar(pasta, cfg)
+    except Exception:
+        pass
+
+
+def avisar_chave(a):
+    """Aviso do Windows (uma vez por dia) quando a chave está perto de vencer."""
+    if not getattr(a, "notificar", False):
+        return
+    try:
+        pasta = pasta_dados()
+        texto = configuracao.alerta(pasta)
+        cfg = configuracao.carregar(pasta)
+        hoje = dt.date.today().isoformat()
+        if texto and cfg.get("notif_chave_dia") != hoje:
+            if notificacao.notificar("Painel Garmin: chave da Garmin", texto, "aviso"):
+                cfg["notif_chave_dia"] = hoje
+                configuracao.salvar(pasta, cfg)
+    except Exception:
+        pass
+
+
 def redesenhar(dias=30, abrir=False):
     """Recria o painel.html com os dados já guardados, sem consultar a Garmin."""
     hoje, ini = periodo(dias)
@@ -664,6 +707,18 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--atualizar-programa", action="store_true",
+                   help="atualiza os arquivos do PROGRAMA a partir do GitHub (seus dados não são tocados)")
+    p.add_argument("--simular", action="store_true", help="com --atualizar-programa: só mostra o que mudaria")
+    p.add_argument("--sem-perguntar", action="store_true", help="com --atualizar-programa: não pede confirmação")
+    p.add_argument("--ramo", metavar="RAMO", help="ramo do GitHub para --atualizar-programa")
+    p.add_argument("--desfazer-atualizacao", action="store_true",
+                   help="restaura a versão do programa guardada antes da última atualização")
+    p.add_argument("--notificar", action="store_true",
+                   help="mostra avisos do Windows (falha na atualização, chave perto de vencer); "
+                        "usado pela atualização automática")
+    p.add_argument("--testar-notificacao", action="store_true",
+                   help="mostra um aviso de teste do Windows")
     p.add_argument("--servir", action="store_true",
                    help="abre o painel com edição de provas e perfil (servidor só neste "
                         "computador); use o atalho abrir_painel.bat")
@@ -730,6 +785,18 @@ def main(argv=None):
                   "A chave não foi tocada.")
             return 0
         dias = max(1, min(a.dias, 365))
+        if a.atualizar_programa:
+            return atualizador.executar(PASTA, a.simular, not a.sem_perguntar, atualizador.REPO,
+                                        a.ramo or atualizador.RAMO)
+        if a.desfazer_atualizacao:
+            atualizador.desfazer(PASTA)
+            return 0
+        if a.testar_notificacao:
+            ok = notificacao.notificar("Painel Garmin", "Teste: se você está vendo este aviso, as "
+                                       "notificações do painel funcionam.", "info")
+            print("Aviso de teste enviado. Olhe o canto da tela (ou a central de notificações)."
+                  if ok else "Avisos do Windows só funcionam no Windows.")
+            return 0
         if a.so_visual:
             redesenhar(dias, not a.sem_abrir)
             return 0
@@ -748,12 +815,15 @@ def main(argv=None):
             modo_teste(cli, dia)
         else:
             executar_atualizacao(dias, not a.sem_abrir, a.historico, a.rotas, cli)
+            avisar_chave(a)
         return 0
-    except (Erro, ErroCofre, rotas.ErroRota) as e:
+    except (Erro, ErroCofre, rotas.ErroRota, atualizador.ErroAtualizador) as e:
         print(f"ERRO: {e}")
+        avisar_falha(a, str(e))
         return 1
     except Exception as e:  # nunca mostra detalhes que possam ter segredos
         print(f"ERRO inesperado: {type(e).__name__}")
+        avisar_falha(a, f"Erro inesperado ({type(e).__name__}). Rode o diagnóstico para ver o que houve.")
         return 2
 
 

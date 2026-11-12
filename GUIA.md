@@ -32,6 +32,9 @@ diagnóstico e sem conselho de treino.
 | `metas.py` | Suas metas e o progresso delas | Não |
 | `editor.py`, `servidor.py` | Edição de provas e perfil pelo painel (servidor local) | Não |
 | `abrir_painel.bat` | Abre o painel com edição | Sim |
+| `atualizar_programa.bat`, `atualizador.py` | Atualiza o programa pelo GitHub (com confirmação e desfazer) | Sim |
+| `notificacao.py` | Avisos do Windows | Não |
+| `versao.txt`, `backup_programa\\` | Versão instalada e cópias do programa antigo | Não |
 | `corredor.py`, `arte.py`, `rotas.py` | Perfil, provas e logos; desenhos; trilhas de GPS | Não |
 | `libs/`, `requirements-fit.txt` | Biblioteca oficial da Garmin (FIT) e a versão fixa dela | Não |
 | `rotas.json` | Trilhas de GPS simplificadas (**dados de localização**, só neste computador) | Não |
@@ -132,6 +135,34 @@ acessível pela rede nem pela internet) e abre o painel no navegador. Use o bot�
   como editar (um arquivo solto não pode gravar nada no computador).
 - Segurança: senha aleatória a cada abertura (está no endereço), só aceita o próprio painel, só grava
   em `provas.txt`, `perfil.txt` e `imagens\`, e só aceita imagens de verdade (até 2,5 MB).
+
+### Painel no celular
+
+Em telas estreitas (menos de 700 px) o painel usa uma versão própria dos gráficos: letras maiores,
+menos rótulos e período padrão de **7 dias** (também há 14; o de 30 só no computador). Toque num dia
+para ver o balão com os números. Hoje o painel só é acessível no computador; no celular será
+possível quando ele estiver num servidor (a VPS que vamos preparar).
+
+### Avisos do Windows
+
+A atualização automática agora avisa com um balão do Windows quando **falha** (no máximo a cada 12 h) e
+quando a **chave da Garmin está a 14 dias ou menos de vencer** (uma vez por dia). Os avisos nunca
+trazem chave nem detalhes técnicos. Para testar: `py garmin_painel.py --testar-notificacao`. Se nada
+aparecer, veja se o "Assistente de foco / Não incomodar" do Windows está ligado.
+
+### Atualizar o programa com um clique
+
+Dê dois cliques em **`atualizar_programa.bat`**. Ele pergunta ao GitHub qual é a versão mais recente,
+**mostra o que vai mudar** e só troca os arquivos depois do seu "Sim" (Enter). Antes de trocar, confere se
+o código novo é válido e guarda a versão antiga em `backup_programa\`.
+
+- Só troca arquivos do programa (`.py`, `.bat`, guias e `requirements-fit.txt`). **Nunca toca** em
+  `perfil.txt`, `provas.txt`, `imagens\`, `dados_brutos.json`, `rotas.json`, configurações, backups nem
+  na biblioteca da Garmin (`libs\`).
+- Só mostrar, sem trocar: `py garmin_painel.py --atualizar-programa --simular`.
+- Voltar à versão anterior: `py garmin_painel.py --desfazer-atualizacao`.
+- Segurança: o programa novo roda no seu computador com acesso à sua chave da Garmin. Mantenha a
+  **verificação em duas etapas** ligada na sua conta do GitHub.
 
 ### Rotas e percursos (opcional)
 
