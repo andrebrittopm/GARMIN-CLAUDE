@@ -69,3 +69,18 @@ def alerta(pasta, hoje=None):
         return (f"A chave da Garmin vence {quando} ({br}). Crie outra no Garmin "
                 "Connect antes disso e guarde-a de novo no cofre.")
     return None
+
+
+def privacidade_m(pasta):
+    """Metros cortados do começo e do fim de cada rota desenhada (padrão 300)."""
+    v = carregar(pasta).get("privacidade_m")
+    return int(v) if isinstance(v, (int, float)) and 0 <= v <= 2000 else 300
+
+
+def definir_privacidade(pasta, metros):
+    if not 0 <= metros <= 2000:
+        raise ValueError("Use um valor entre 0 e 2000 metros.")
+    d = carregar(pasta)
+    d["privacidade_m"] = int(metros)
+    salvar(pasta, d)
+    return int(metros)

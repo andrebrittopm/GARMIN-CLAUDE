@@ -30,7 +30,9 @@ diagnóstico e sem conselho de treino.
 | `visual.py` | Desenha a página e os gráficos | Não |
 | `diagnostico.py`, `configuracao.py` | Conferência geral e data de vencimento da chave | Não |
 | `metas.py` | Suas metas e o progresso delas | Não |
-| `corredor.py`, `arte.py` | Perfil, provas e logos; desenhos (selos, curvas) | Não |
+| `corredor.py`, `arte.py`, `rotas.py` | Perfil, provas e logos; desenhos; trilhas de GPS | Não |
+| `libs/`, `requirements-fit.txt` | Biblioteca oficial da Garmin (FIT) e a versão fixa dela | Não |
+| `rotas.json` | Trilhas de GPS simplificadas (**dados de localização**, só neste computador) | Não |
 | `perfil.txt`, `provas.txt`, `imagens\\` | Seu nome, suas provas, foto e logos | **Sim** |
 | `dados_brutos.json` | Seus dados guardados (**dados de saúde**, sem chave) | Não |
 | `backups/` | Até 5 cópias diárias do arquivo acima | Só para restaurar |
@@ -107,6 +109,25 @@ Edite os dois `.txt` no Bloco de Notas e salve; depois rode `redesenhar.bat`. De
 - Sem `perfil.txt`, o painel mantém o cabeçalho clássico.
 - A soma "no ano" só aparece como do ano quando o histórico guardado começa em 1º de janeiro;
   antes disso ela diz "desde dd/mm". Rode `--historico 365` para completar.
+
+### Rotas e percursos (opcional)
+
+As rotas usam a **biblioteca oficial da Garmin** para ler o arquivo de GPS de cada corrida.
+
+- **Instalar (uma vez):** na pasta do painel, `py -m pip install --require-hashes --target libs -r requirements-fit.txt`.
+  A versão e a assinatura do arquivo são fixas; se não conferirem, o pip recusa.
+- **Baixar as trilhas das corridas que faltam:** `py garmin_painel.py --rotas` (a primeira vez demora
+  alguns minutos, com um ponto por pedido). Depois, cada atualização normal baixa só algumas novas.
+- **Aparece no painel:** "Meus percursos" (as 12 corridas mais recentes), "Todas as minhas rotas"
+  (sobrepostas, na mesma escala; corridas em outra cidade ficam fora do mapa geral) e as suas rotas
+  como arte de fundo no topo. Sem mapa de fundo: nada é enviado a ninguém.
+- **Privacidade:** o começo e o fim de cada rota são cortados (padrão 300 m, onde costuma ser a sua casa).
+  Mude com `py garmin_painel.py --privacidade-metros 500` (0 desliga) e rode `redesenhar.bat`.
+  As trilhas completas ficam só no `rotas.json`, no seu computador; o `painel.html` contém só o
+  desenho já cortado. Mesmo assim, não compartilhe o painel publicamente: ele mostra a sua região.
+- Corridas de esteira ou sem GPS ficam sem desenho (normal).
+- A biblioteca da Garmin tem licença própria que **proíbe redistribuí-la**: por isso ela não fica no
+  GitHub e cada instalação baixa direto da fonte.
 
 ## 4. Se algo der errado
 

@@ -42,7 +42,7 @@ ATIV = {1: [("running", 10000, 3000), ("strength_training", None, 2400)], 3: [("
         4: [("trail_running", 8000, 2800)], 8: [("running", 5000, 1700)], 0: [("lap_swimming", 1500, 2100)],
         6: [("running", 12000, 3900), ("cycling", 20000, 2700)], 11: [("running", 6000, 2000)],
         15: [("running", 7000, 2400)], 22: [("running", 9000, 3000)],
-        13: [("running", 10200, 3100)],                         # marcada como competição na Garmin
+        13: [("running", 10200, 3100)], 2: [("treadmill_running", 5000, 1800)],                         # marcada como competição na Garmin
         45: [("running", 21500, 7200)]}                          # fora do período: só entra com --historico
 
 def ativ_json(i, n, t, dist, dur):
@@ -51,7 +51,8 @@ def ativ_json(i, n, t, dist, dur):
          "activityName": f"Treino <{t}>", "activityType": {"typeKey": t}, "duration": float(dur),
          "averageHR": 150 + i, "elevationGain": 20.0 + i}
     if i == 13: r["eventType"] = {"typeId": 1, "typeKey": "race"}
-    if "running" in t: r["hasPolyline"] = True
+    if "running" in t: r["startLatitude"] = None if t == "treadmill_running" else -20.44 + (i % 7) * 0.002
+    if t == "treadmill_running": r.pop("hasPolyline", None)
     if dist: r.update(distance=float(dist), averageSpeed=dist / dur)
     if "running" in t:
         r.update(averageRunningCadenceInStepsPerMinute=170.0 + n, vO2MaxValue=50.0 + i % 3,
@@ -59,7 +60,7 @@ def ativ_json(i, n, t, dist, dur):
                  **{f"fastestSplit_{m}": dur / dist * m * 0.95 for m in (1000, 1609, 5000, 10000, 21098) if dist >= m})
     return r
 
-class Estado: hrv_falha = False; zip_fit = None
+class Estado: hrv_falha = False; zip_fit = None; zip_por_id = None
 DOWNLOADS = []
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -78,6 +79,7 @@ class H(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path); q = dict(urllib.parse.parse_qsl(u.query)); p = u.path
         if "/download-service/files/activity/" in p:
             DOWNLOADS.append(p)
+            if Estado.zip_por_id: return self._bytes(Estado.zip_por_id(int(p.rsplit("/", 1)[1])))
             return self._bytes(Estado.zip_fit if Estado.zip_fit is not None else b"")
         if "userprofile/settings" in p: return self._json({"x": 1})
         if "/weight-service/weight/all/" in p:
@@ -220,7 +222,7 @@ if __name__ == "__main__":
     import tempfile
     alvo = tempfile.mkdtemp()
     rc, out = rodar(["--sem-abrir", "--pasta-dados", alvo]); assert rc == 0, out
-    assert sorted(os.listdir(alvo)) == ["dados_brutos.json", "painel.html"]
+    assert {"dados_brutos.json", "painel.html"} <= set(os.listdir(alvo)) <= {"dados_brutos.json", "painel.html", "rotas.json"}
     gp.PASTA_DADOS = None
 
     # 15) --diagnostico: tudo OK, sem segredos na saída
@@ -447,6 +449,65 @@ linha ruim
         assert abs((rotas.comprimento_m(pts) - rotas.comprimento_m(cort)) - 600) < 25, "tira ~300 m de cada ponta"
         assert rotas.cortar_pontas(pts[:5], 300) == [], "rota curta demais some, nunca vaza"
         assert rotas.pontos_gps({"record_mesgs": [{"position_lat": 0, "position_long": 0}, {"position_lat": 2**31 - 1, "position_long": 0}, {}]}) == [], "0,0 e lat inválida são descartados"
+
+    # 24) rotas (fase 3): trilhas guardadas, esteira sem GPS, outra cidade, privacidade, painel
+    if rotas.carregar_sdk() is not None:
+        import fit_falso, shutil
+        for f_ in ("rotas.json", "dados_brutos.json"):
+            p_ = os.path.join(gp.PASTA, f_)
+            if os.path.exists(p_): os.remove(p_)
+        def zip_do(aid):
+            if aid == 130 and False: return b""
+            longe = (aid == 450)                                   # a corrida de meia maratona: outra cidade
+            lat0 = (-18.51 if longe else -20.44 + (aid % 7) * 0.003)
+            lon0 = (-54.75 if longe else -54.64 + (aid % 5) * 0.003)
+            fb, _ = fit_falso.criar(lat0, lon0, 140 + (aid % 5) * 45, 1 + aid % 3, 700, 20)
+            b_ = io.BytesIO()
+            with zipfile.ZipFile(b_, "w") as z_: z_.writestr(f"{aid}_ACTIVITY.fit", fb)
+            return b_.getvalue()
+        Estado.zip_por_id = zip_do; DOWNLOADS.clear()
+        rc, out = rodar(["--sem-abrir", "--historico", "60"]); assert rc == 0, out
+        assert 1 <= len(DOWNLOADS) <= rotas.POR_EXECUCAO, f"atualização normal baixa poucas por vez ({len(DOWNLOADS)})"
+        rg = rotas.carregar_rotas(gp.PASTA); assert rg and all("pts" in v or v.get("sem_gps") for v in rg.values())
+        antes = len(DOWNLOADS)
+        rc, out = rodar(["--sem-abrir", "--rotas"]); assert rc == 0, out   # --rotas: todas as que faltam
+        rg = rotas.carregar_rotas(gp.PASTA)
+        com = [k for k, v in rg.items() if "pts" in v]; sem = [k for k, v in rg.items() if v.get("sem_gps")]
+        assert len(com) >= 8 and sem == ["20"], (len(com), sem)            # esteira (id 20): sem GPS e sem baixar
+        assert str(20) not in [p.rsplit("/", 1)[1] for p in DOWNLOADS], "esteira com latitude vazia não é baixada"
+        n_dl = len(DOWNLOADS); rc, out = rodar(["--sem-abrir", "--rotas"]); assert len(DOWNLOADS) == n_dl, "não baixa de novo"
+        assert all(len(v["pts"]) <= 300 for v in rg.values() if "pts" in v)
+        # painel: galeria, mapa geral, privacidade (as pontas NÃO aparecem no HTML) e nada de coordenadas
+        pg = painel()
+        assert "Meus percursos" in pg and "Todas as minhas rotas" in pg and "primeiros e últimos 300 m" in pg
+        assert "outra região" in pg, "a corrida de outra cidade não distorce o mapa geral"
+        assert not re.search(r"-\d{2}\.\d{4,}", pg), "nenhuma coordenada (negativa, como no Brasil) no HTML, nem nos desenhos"
+        k0 = com[0]; pts0 = rg[k0]["pts"]
+        inicio_cru = pts0[0]
+        # nenhuma coordenada do ponto inicial cru aparece no HTML (os desenhos usam km projetados, já sem as pontas)
+        assert f"{inicio_cru[0]}" not in pg and f"{inicio_cru[1]}" not in pg
+        rc, out = rodar(["--privacidade-metros", "900"]); assert rc == 0 and "900 m" in out
+        rc, out = rodar(["--privacidade-metros", "5000"]); assert rc == 1 and "entre 0 e 2000" in out
+        rc, out = rodar(["--so-visual", "--sem-abrir"]); assert "primeiros e últimos 900 m" in painel()
+        rc, out = rodar(["--privacidade-metros", "0"]); rc, out = rodar(["--so-visual", "--sem-abrir"]); assert "sem corte de privacidade" in painel()
+        rodar(["--privacidade-metros", "300"])
+        # falha numa atividade não derruba as outras; 3 tentativas e desiste
+        for f_ in ("rotas.json",): os.remove(os.path.join(gp.PASTA, f_))
+        Estado.zip_por_id = lambda aid: b"lixo" if aid == 110 else zip_do(aid)
+        rc, out = rodar(["--sem-abrir", "--rotas"]); assert rc == 0, out
+        rg = rotas.carregar_rotas(gp.PASTA); assert rg["110"] == {"falhou": 1} and len([1 for v in rg.values() if "pts" in v]) >= 8
+        for _ in range(3): rodar(["--sem-abrir", "--rotas"])
+        assert rotas.carregar_rotas(gp.PASTA)["110"]["falhou"] == rotas.MAX_TENTATIVAS
+        n_dl = len(DOWNLOADS); rodar(["--sem-abrir", "--rotas"]); assert str(110) not in [p.rsplit("/", 1)[1] for p in DOWNLOADS[n_dl:]], "desistiu"
+        # sem a biblioteca: --rotas explica; a atualização normal fica em silêncio
+        orig_sdk = rotas.carregar_sdk; rotas.carregar_sdk = lambda: None
+        rc, out = rodar(["--sem-abrir", "--rotas"]); assert rc == 1 and "pip install --require-hashes" in out
+        rc, out = rodar(["--sem-abrir"]); assert rc == 0 and "biblioteca" not in out.lower()
+        rotas.carregar_sdk = orig_sdk
+        # área principal
+        idx, fora = rotas.area_principal([[[-20.44, -54.64]] * 3, [[-20.45, -54.65]] * 3, [[-18.5, -54.75]] * 3])
+        assert idx == [0, 1] and fora == 1
+        Estado.zip_por_id = None; Estado.zip_fit = None
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)

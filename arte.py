@@ -104,3 +104,58 @@ def selo_iniciais(nome):
     h = sum(ord(c) for c in nome)
     formas = list(FORMAS)
     return logo_exemplo(sigla, formas[h % len(formas)], CORES_SELO[h % len(CORES_SELO)])
+
+
+# ----------------------------------------------------------- rotas reais ----
+def _caixa(xy):
+    xs, ys = [p[0] for p in xy], [p[1] for p in xy]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def rota_real_svg(xy, uid, w=220, h=150, rotulo="Rota"):
+    """Rota neon a partir de pontos (x, y) já projetados em km."""
+    if len(xy) < 2:
+        return f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="{esc(rotulo)}"></svg>'
+    pts = ajustar(xy, w, h)
+    return (f'''<svg viewBox="0 0 {w} {h}" role="img" aria-label="{esc(rotulo)}">
+<defs><linearGradient id="g{uid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C4B5FD"/><stop offset="1" stop-color="#56B4E9"/></linearGradient>
+<filter id="b{uid}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter></defs>
+<path d="{caminho(pts)}" fill="none" stroke="#8B6CF4" stroke-width="6" opacity=".55" filter="url(#b{uid})"/>
+<path d="{caminho(pts)}" fill="none" stroke="url(#g{uid})" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>''')
+
+
+def rotas_sobrepostas_svg(lista_xy, w=1000, h=420, pad=24):
+    """Várias rotas no MESMO quadro (mesma escala): onde mais se passa fica mais
+    intenso. lista_xy: do mais antigo ao mais recente (o recente fica mais claro)."""
+    validas = [xy for xy in lista_xy if len(xy) >= 2]
+    if not validas:
+        return ""
+    todas = [p for xy in validas for p in xy]
+    x0, x1, y0, y1 = _caixa(todas)
+    esc_ = min((w - 2 * pad) / ((x1 - x0) or 1e-6), (h - 2 * pad) / ((y1 - y0) or 1e-6))
+    ox, oy = (w - (x1 - x0) * esc_) / 2 - x0 * esc_, (h - (y1 - y0) * esc_) / 2 - y0 * esc_
+    n = len(validas)
+    cores = ["#7C5CF0", "#8B6CF4", "#A592F5", "#C4B5FD", "#56B4E9"]
+    ps = []
+    for i, xy in enumerate(validas):
+        cor = cores[min(len(cores) - 1, int(i / max(n - 1, 1) * (len(cores) - 1) + .5))]
+        q = [(x * esc_ + ox, y * esc_ + oy) for x, y in xy]
+        ps.append(f'<path d="{caminho(q)}" fill="none" stroke="{cor}" stroke-width="1.8" '
+                  f'stroke-linecap="round" stroke-linejoin="round" opacity=".42"/>')
+    return (f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="Todas as rotas sobrepostas" '
+            f'style="mix-blend-mode:screen">{"".join(ps)}</svg>')
+
+
+def arte_topo_real(lista_xy, w=1200, h=300):
+    """Fundo do topo com as suas rotas reais (apagadas) no lugar das curvas inventadas."""
+    ps = []
+    for i, xy in enumerate(lista_xy[:9]):
+        if len(xy) < 2:
+            continue
+        pts = ajustar(xy, 380, 230, 10)
+        dx = (i % 5) * 260 - 40
+        ps.append(f'<path d="{caminho([(x + dx, y + (i // 5) * 70 - 10) for x, y in pts])}" fill="none" '
+                  f'stroke="#8B6CF4" stroke-width="1.6" opacity=".28"/>')
+    faixas = "".join(f'<path d="M-50,{h - 20 + k * 14} Q {w / 2},{h - 140 + k * 22} {w + 50},{h - 20 + k * 14}" '
+                     f'fill="none" stroke="#C4B5FD" stroke-width="1" opacity="{.22 - k * .03:.2f}"/>' for k in range(5))
+    return f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">{"".join(ps)}{faixas}</svg>'

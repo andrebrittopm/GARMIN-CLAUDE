@@ -9,7 +9,9 @@ import datetime as dt
 import html
 import math
 
-from arte import arte_topo, foto_exemplo, selo_iniciais
+from arte import (arte_topo, arte_topo_real, foto_exemplo, rota_real_svg,
+                  rotas_sobrepostas_svg, selo_iniciais)
+import rotas as rotas_mod
 from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, comparar_semanas, cor_esporte, data_br,
                       grupo, hcurto, hm, hms, km, minutos, num, pace,
                       pace_de_velocidade, rotulo_esporte, segunda,
@@ -729,7 +731,7 @@ def card_prova_feita(p):
             f'<div><dt>Pace</dt><dd>{esc(ritmo)}</dd></div>{real}</dl></article>')
 
 
-def hero_html(co, agora):
+def hero_html(co, agora, rotas_xy=None):
     per = co["perfil"]
     foto = (f'<img src="{per["foto_uri"]}" alt="Foto de {esc(per["nome"])}">'
             if per["foto_uri"] else foto_exemplo(False))
@@ -744,11 +746,45 @@ def hero_html(co, agora):
     hs = "".join(f'<div class="hs {cl}"><div class="r">{esc(r)}</div><div class="v">{esc(v)}</div></div>'
                  for r, v, cl in stats)
     frase = f'<p class="sub" style="margin:0">{esc(per["frase"])}</p>' if per["frase"] else ""
-    return (f'<header class="hero">{arte_topo()}<div class="hero-in">'
+    arte = arte_topo_real(rotas_xy) if rotas_xy else arte_topo()
+    return (f'<header class="hero">{arte}<div class="hero-in">'
             f'<div class="avatar">{foto}</div>'
             f'<div><p class="eyebrow">PAINEL DO CORREDOR</p><h1>{esc(per["nome"])}</h1>{frase}'
             f'<p class="sub" style="margin:6px 0 0">Período: {{ini}} a {{fim}} · atualizado em {agora.strftime("%d/%m/%Y %H:%M")}</p></div>'
             f'<div class="hero-stats">{hs}</div></div></header>')
+
+
+def secao_rotas(info):
+    """Galeria das últimas rotas + mapa de todas sobrepostas. info vem de
+    garmin_painel.preparar_rotas (rotas já com o começo e o fim cortados)."""
+    itens = info["itens"] if info else []
+    if not itens:
+        return "", []
+    priv = info["privacidade_m"]
+    nota_priv = (f"o começo e o fim de cada rota ficam ocultos (primeiros e últimos {priv} m)" if priv
+                 else "atenção: sem corte de privacidade, o início e o fim aparecem")
+    cards = []
+    for it in reversed(itens[-12:]):
+        pc = pace(pace_de_velocidade(it["vel_ms"]))
+        t = tip(data_br(it["data"]), f"Distância|{km(it['dist_m'])}", f"Tempo|{hms(it['dur_s'])}", f"Pace|{pc}")
+        cards.append(
+            f'<div class="rota" data-tip="{esc(t)}">'
+            f'{rota_real_svg(rotas_mod.projetar(it["pts"]), "r" + str(it["id"]), rotulo="Rota de " + data_br(it["data"]))}'
+            f'<div class="cap"><span>{esc(data_br(it["data"]))}</span><b>{esc(km(it["dist_m"]))}</b>'
+            f'<span class="mut">{esc(pc)}</span></div></div>')
+    idx, fora = rotas_mod.area_principal([it["pts"] for it in itens])
+    lat0 = sum(rotas_mod.centro(itens[i]["pts"])[0] for i in idx) / len(idx)
+    xy = [rotas_mod.projetar(itens[i]["pts"], lat0) for i in sorted(idx)]
+    nota_fora = (f" · {fora} corrida{'s' if fora != 1 else ''} em outra região não entra neste mapa"
+                 if fora else "")
+    sec = (cartao("Meus percursos",
+                  f"as {min(len(itens), 12)} corridas mais recentes com trilha · {nota_priv}",
+                  f'<div class="galeria">{"".join(cards)}</div>')
+           + cartao("Todas as minhas rotas",
+                    f"{len(idx)} corridas sobrepostas, na mesma escala: onde mais passei fica mais intenso; "
+                    f"as mais recentes são mais claras{nota_fora} · sem mapa de fundo, nada é enviado a ninguém",
+                    f'<div class="mapa">{rotas_sobrepostas_svg(xy)}</div>'))
+    return sec, [rotas_mod.projetar(itens[i]["pts"]) for i in range(len(itens) - 1, max(len(itens) - 10, -1), -1)]
 
 
 def provas_html(co):
@@ -879,6 +915,15 @@ border:1px solid var(--ouro);background:rgba(255,210,63,.08);color:var(--tx);fon
 .meta-lin .txt{display:flex;justify-content:space-between;font-size:.9rem}
 .faixa[hidden]{display:none}
 .faixa b{color:var(--ouro);font-family:var(--titulo);text-transform:uppercase;font-size:.78rem;letter-spacing:.04em;white-space:nowrap}
+/* ---- rotas ---- */
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.rota{background:rgba(11,8,19,.5);border:1px solid var(--bd);border-radius:16px;padding:10px 12px 12px;transition:border-color .15s,transform .15s}
+.rota:hover{border-color:var(--roxo2);transform:translateY(-2px)}
+.rota svg{width:100%;height:auto;display:block}
+.rota .cap{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;margin-top:4px}
+.rota .cap b{font-family:var(--mono)}
+.mapa{background:radial-gradient(500px 220px at 50% 50%,rgba(139,92,246,.18),transparent 70%),#0d0918;border:1px solid var(--bd);border-radius:16px;padding:6px}
+.mapa svg{width:100%;height:auto;display:block}
 /* ---- visual de corredor (perfil, provas, medalhas) ---- */
 .hero{position:relative;overflow:hidden;border:1px solid var(--bd);border-radius:26px;padding:34px 30px 30px;
 background:radial-gradient(700px 320px at 85% -10%,rgba(139,92,246,.45),transparent 65%),linear-gradient(160deg,#1b1233,#0f0a1d)}
@@ -1032,7 +1077,7 @@ document.querySelectorAll('button.csv').forEach(function(b){
 
 
 def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
-           historico=None, metas=None, cobertura_ini=None, corredor=None):
+           historico=None, metas=None, cobertura_ini=None, corredor=None, rotas=None):
     """Devolve (html, nomes_dos_gráficos_omitidos).
 
     alertas: faixas de destaque no topo (ex.: chave perto de vencer).
@@ -1065,6 +1110,9 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
                          card_comparacao(comparar_semanas(atividades, hoje, ini))))
     if corredor and (corredor["proximas"] or corredor["feitas"]):
         blocos.append(provas_html(corredor))
+    secao_r, hero_xy = secao_rotas(rotas)
+    if secao_r:
+        blocos.append(secao_r)
     blocos.append(cartao("Tempo por esporte — semana atual",
                          f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse sobre uma fatia",
                          graf_anel(atividades, sem0, sem0 + dt.timedelta(days=6))))
@@ -1131,7 +1179,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
                 + ". Para ampliar: py garmin_painel.py --historico 365") if cobertura_ini \
         else "Histórico guardado neste computador."
     if corredor and corredor["perfil"]:
-        cabecalho = hero_html(corredor, agora).replace("{ini}", ini.strftime("%d/%m/%Y")).replace("{fim}", fim.strftime("%d/%m/%Y"))
+        cabecalho = hero_html(corredor, agora, hero_xy or None).replace("{ini}", ini.strftime("%d/%m/%Y")).replace("{fim}", fim.strftime("%d/%m/%Y"))
     else:
         cabecalho = (f'<div class="top"><h1>Painel Garmin</h1><p class="sub">Período: {ini.strftime("%d/%m/%Y")} a '
                      f'{fim.strftime("%d/%m/%Y")} · atualizado em {agora.strftime("%d/%m/%Y %H:%M")}</p></div>')

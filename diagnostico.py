@@ -151,6 +151,10 @@ def executar():
         ok("Biblioteca oficial para rotas (FIT): não instalada (só é necessária para as rotas)")
     else:
         ok(f"Biblioteca oficial para rotas (FIT): garmin-fit-sdk {rotas.versao_sdk()} instalada")
+        rg = rotas.carregar_rotas(pasta)
+        com = sum(1 for v in rg.values() if "pts" in v)
+        ok(f"Rotas guardadas: {com} com trilha, {sum(1 for v in rg.values() if v.get('sem_gps'))} sem GPS, "
+           f"{sum(1 for v in rg.values() if v.get('falhou'))} com falha")
 
     # --- tarefa agendada (Windows)
     if sys.platform == "win32":

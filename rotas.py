@@ -7,9 +7,11 @@
 - Nada é enviado a lugar nenhum: as rotas são desenhadas sozinhas, sem mapa de fundo.
 """
 import io
+import json
 import math
 import os
 import sys
+import time
 import zipfile
 
 PASTA_PROGRAMA = os.path.dirname(os.path.abspath(__file__))
@@ -163,3 +165,126 @@ def resumo(mesgs, pts):
             "campos": campos, "extensao_m": ext,
             "comprimento_m": comprimento_m(pts) if pts else 0.0,
             "esporte": [s.get("sport") for s in mesgs.get("session_mesgs", [])][:1]}
+
+
+# ------------------------------------------------------------------ guarda ---
+ARQUIVO = "rotas.json"
+PRIVACIDADE_PADRAO_M = 300
+POR_EXECUCAO = 8          # trilhas baixadas por atualização normal (o resto, aos poucos)
+MAX_TENTATIVAS = 3
+
+
+def caminho_rotas(pasta):
+    return os.path.join(pasta, ARQUIVO)
+
+
+def carregar_rotas(pasta):
+    """{id_da_atividade(str): {pts, ...} | {sem_gps: true} | {falhou: n}}"""
+    try:
+        with open(caminho_rotas(pasta), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def salvar_rotas(pasta, dados):
+    cam = caminho_rotas(pasta)
+    tmp = cam + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(dados, f, separators=(",", ":"))
+    for n in range(4):
+        try:
+            os.replace(tmp, cam)
+            return
+        except OSError:
+            if n == 3:
+                raise
+            time.sleep(0.5 * (n + 1))
+
+
+def arredondar(pts):
+    """~1 m de precisão: suficiente para desenhar e menor para guardar."""
+    return [[round(la, 5), round(lo, 5)] for la, lo in pts]
+
+
+def e_corrida(a):
+    return "running" in ((a.get("activityType") or {}).get("typeKey") or "")
+
+
+def pendentes(atividades_brutas, guardadas):
+    """Corridas (mais recentes primeiro) cuja trilha ainda não foi guardada."""
+    out = []
+    for a in atividades_brutas:
+        k = str(a.get("activityId"))
+        if not e_corrida(a) or k in guardadas and (
+                "pts" in guardadas[k] or guardadas[k].get("sem_gps")
+                or guardadas[k].get("falhou", 0) >= MAX_TENTATIVAS):
+            continue
+        out.append(a)
+    return sorted(out, key=lambda a: a.get("startTimeLocal") or "", reverse=True)
+
+
+def buscar_trilhas(cli, atividades_brutas, guardadas, limite=POR_EXECUCAO, progresso=None):
+    """Baixa o FIT das corridas pendentes (só leitura) e guarda a trilha simplificada.
+    Devolve (quantas_novas, avisos). Uma falha não derruba as outras."""
+    if carregar_sdk() is None:
+        return 0, ["Rotas desativadas: a biblioteca oficial (garmin-fit-sdk) não está instalada. "
+                   "Instale com: " + INSTALAR]
+    novas, avisos = 0, []
+    for a in pendentes(atividades_brutas, guardadas)[:limite]:
+        k = str(a.get("activityId"))
+        # esteira/GPS desligado: a Garmin informa a latitude de partida como vazia.
+        # Se o campo nem existe na resposta, não dá para saber: tenta baixar.
+        if "startLatitude" in a and a["startLatitude"] is None:
+            guardadas[k] = {"sem_gps": True}
+            continue
+        try:
+            fit = extrair_fit(cli.get_bytes(f"/download-service/files/activity/{k}", LIMITE_ZIP))
+            pts = pontos_gps(decodificar(fit))
+            if len(pts) < 10:
+                guardadas[k] = {"sem_gps": True}
+            else:
+                guardadas[k] = {"pts": arredondar(simplificar(pts)),
+                                "gps_m": round(comprimento_m(pts))}
+                novas += 1
+        except Exception as e:                             # nunca mostra detalhes
+            msg = str(e)
+            ant = guardadas.get(k, {}).get("falhou", 0)
+            guardadas[k] = {"falhou": ant + 1}
+            if "429" in msg:
+                avisos.append("A Garmin pediu para esperar (muitos pedidos); as trilhas "
+                              "que faltam serão baixadas na próxima atualização.")
+                break
+        if progresso:
+            progresso()
+        time.sleep(0.4)
+    return novas, avisos
+
+
+# --------------------------------------------------------- desenho e agrupar -
+def projetar(pts, lat0=None):
+    """(lat, lon) -> (x, y) em km, com y para baixo (como no desenho)."""
+    if not pts:
+        return []
+    lat0 = sum(p[0] for p in pts) / len(pts) if lat0 is None else lat0
+    kx = 111.32 * math.cos(math.radians(lat0))
+    return [(p[1] * kx, -p[0] * 110.54) for p in pts]
+
+
+def centro(pts):
+    return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+def area_principal(rotas, raio_km=25.0):
+    """Entre várias rotas (cada uma: lista de [lat, lon]), as que ficam na região
+    com mais corridas. Devolve (indices_da_regiao, quantas_ficaram_de_fora)."""
+    if not rotas:
+        return [], 0
+    cs = [centro(r) for r in rotas]
+    melhor = []
+    for c in cs:
+        perto = [i for i, d in enumerate(cs) if distancia_m(c, d) <= raio_km * 1000]
+        if len(perto) > len(melhor):
+            melhor = perto
+    return melhor, len(rotas) - len(melhor)

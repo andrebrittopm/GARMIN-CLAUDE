@@ -460,6 +460,46 @@ def modo_teste_rota(cli, data=None):
     print("Teste concluído. Nenhuma coordenada, chave ou token foi mostrado ou salvo; o arquivo FIT não foi gravado.")
 
 
+def preparar_rotas(pasta, historico):
+    """Rotas guardadas + dados da atividade, já com o começo e o fim cortados."""
+    guardadas = rotas.carregar_rotas(pasta)
+    priv = configuracao.privacidade_m(pasta)
+    por_id = {str(a["id"]): a for a in historico if a.get("id") is not None}
+    itens = []
+    for k, v in guardadas.items():
+        a = por_id.get(k)
+        if not a or "pts" not in v:
+            continue
+        pts = rotas.cortar_pontas(v["pts"], priv)
+        if len(pts) >= 5:
+            itens.append({"id": k, "data": a["data"], "hora": a.get("hora") or "", "dist_m": a["dist_m"],
+                          "dur_s": a["dur_s"], "vel_ms": a["vel_ms"], "pts": pts})
+    itens.sort(key=lambda x: (x["data"] or "", x["hora"]))
+    return {"itens": itens, "privacidade_m": priv}
+
+
+def atualizar_rotas(cli, dados, limite=rotas.POR_EXECUCAO, explicito=False):
+    """Baixa as trilhas que faltam (poucas por vez). Sem a biblioteca oficial instalada,
+    só avisa quando você pediu (--rotas); nas atualizações normais fica em silêncio."""
+    if rotas.carregar_sdk() is None:
+        if explicito:
+            raise rotas.ErroRota("A biblioteca oficial da Garmin (garmin-fit-sdk) não está "
+                                 "instalada. Instale com: " + rotas.INSTALAR)
+        return []
+    pasta = pasta_dados()
+    guardadas = rotas.carregar_rotas(pasta)
+    novas, avisos = rotas.buscar_trilhas(cli, armazem.todas_atividades(dados), guardadas, limite)
+    if sys.stdout.isatty() and novas:
+        print()
+    try:
+        rotas.salvar_rotas(pasta, guardadas)
+    except OSError:
+        avisos.append("Não consegui guardar as trilhas de GPS em rotas.json")
+    if novas:
+        print(f"- trilhas de GPS novas: {novas}")
+    return avisos
+
+
 def caminho_armazem():
     return os.path.join(pasta_dados(), "dados_brutos.json")
 
@@ -523,7 +563,8 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
                            agora, avisos, [alerta] if alerta else None,
                            venc[0] if venc else None,
                            historico=historico, metas=metas.progresso(pasta, historico, hoje),
-                           cobertura_ini=dados.get("cobertura_ini"), corredor=co)
+                           cobertura_ini=dados.get("cobertura_ini"), corredor=co,
+                           rotas=preparar_rotas(pasta, historico) if os.path.exists(rotas.caminho_rotas(pasta)) else None)
     caminho = os.path.join(pasta, "painel.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(pag)
@@ -573,6 +614,12 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--rotas", action="store_true",
+                   help="baixa as trilhas de GPS de TODAS as corridas que ainda faltam "
+                        "(a atualização normal baixa só algumas por vez)")
+    p.add_argument("--privacidade-metros", type=int, metavar="N",
+                   help="metros cortados do começo e do fim de cada rota desenhada "
+                        "(padrão 300; 0 desliga)")
     p.add_argument("--teste-rota", action="store_true",
                    help="baixa o FIT de uma corrida e confere se dá para ler a trilha "
                         "(use --data AAAA-MM-DD para escolher o dia)")
@@ -609,6 +656,14 @@ def main(argv=None):
                 except ValueError as e:
                     raise Erro(str(e)) from None
                 print(f"Meta removida: {a.remover_meta}")
+            return 0
+        if a.privacidade_metros is not None:
+            try:
+                n = configuracao.definir_privacidade(pasta_dados(), a.privacidade_metros)
+            except ValueError as e:
+                raise Erro(str(e)) from None
+            print(f"Privacidade das rotas: cortando {n} m do começo e do fim. "
+                  "Rode redesenhar.bat para aplicar." + (" ATENÇÃO: com 0 o início e o fim aparecem." if n == 0 else ""))
             return 0
         if a.criar_perfil:
             feitos = corredor.criar_modelos(pasta_dados())
@@ -652,6 +707,7 @@ def main(argv=None):
             if a.historico:
                 busca_ini = min(ini, hoje - dt.timedelta(days=max(1, min(a.historico, 3650)) - 1))
             avisos = atualizar_armazem(cli, dados, hoje, busca_ini)
+            avisos += atualizar_rotas(cli, dados, 100000 if a.rotas else rotas.POR_EXECUCAO, a.rotas)
             gerar(dados, hoje, ini, dt.datetime.now(), avisos, not a.sem_abrir)
         return 0
     except (Erro, ErroCofre, rotas.ErroRota) as e:
