@@ -509,6 +509,107 @@ linha ruim
         assert idx == [0, 1] and fora == 1
         Estado.zip_por_id = None; Estado.zip_fit = None
 
+    # 25) editor de provas e perfil: lógica
+    import editor, servidor, http.client, base64 as b64m, threading
+    pasta_ = gp.PASTA
+    for f_ in ("provas.txt", "perfil.txt"):
+        if os.path.exists(os.path.join(pasta_, f_)): os.remove(os.path.join(pasta_, f_))
+    shutil.rmtree(os.path.join(pasta_, "imagens"), ignore_errors=True)
+    corredor.criar_modelos(pasta_)
+    open(os.path.join(pasta_, "provas.txt"), "a", encoding="utf-8").write("# meu comentário\nlinha esquisita\n")
+    open(os.path.join(pasta_, "perfil.txt"), "w", encoding="utf-8").write("# perfil\nnome: Teste\nfrase: oi\nfoto: \n")
+    img64 = b64m.b64encode(png()).decode()
+    l0, v0 = editor.listar_provas(pasta_); assert l0 == []
+    p1 = editor.adicionar_prova(pasta_, {"nome": "  Corrida;  Um ", "data": "2026-10-18", "dist_km": "10", "logo_b64": img64, "logo_ext": "png"}, v0)
+    assert p1["nome"] == "Corrida, Um" and re.fullmatch(r"corrida-um-[0-9a-f]{6}\.png", p1["logo"])
+    assert os.path.exists(os.path.join(pasta_, "imagens", "corridas", p1["logo"]))
+    l1, v1 = editor.listar_provas(pasta_); assert len(l1) == 1 and l1[0]["dist_km"] == 10
+    txt = open(os.path.join(pasta_, "provas.txt"), encoding="utf-8").read()
+    assert "# meu comentário" in txt and "linha esquisita" in txt, "preserva comentários e linhas desconhecidas"
+    try: editor.adicionar_prova(pasta_, {"nome": "X", "data": "2027-01-01"}, "versao-velha"); raise SystemExit("deveria recusar versão velha")
+    except editor.ErroEdicao as e_: assert e_.codigo == 409
+    for ruim, esperado in (({"nome": "", "data": "2027-01-01"}, "nome"), ({"nome": "A", "data": "ontem"}, "data"),
+                           ({"nome": "A", "data": "2027-01-01", "dist_km": "abc"}, "número"), ({"nome": "A", "data": "2027-01-01", "dist_km": "-3"}, "maior que 0"),
+                           ({"nome": "A", "data": "1800-01-01"}, "intervalo"), ({"nome": "A" * 200, "data": "2027-01-01"}, "longo"),
+                           ({"nome": "A", "data": "2027-01-01", "logo_b64": img64, "logo_ext": "exe"}, "Tipo de imagem"),
+                           ({"nome": "A", "data": "2027-01-01", "logo_b64": "@@@", "logo_ext": "png"}, "corrompida"),
+                           ({"nome": "A", "data": "2027-01-01", "logo_b64": b64m.b64encode(b"nao sou png").decode(), "logo_ext": "png"}, "de verdade"),
+                           ({"nome": "A", "data": "2027-01-01", "logo_b64": b64m.b64encode(b"\x89PNG" + b"0" * 2_600_000).decode(), "logo_ext": "png"}, "2 MB")):
+        try: editor.adicionar_prova(pasta_, ruim, None); raise SystemExit(f"deveria recusar {ruim['nome'][:5]}")
+        except editor.ErroEdicao as e_: assert esperado in str(e_), (esperado, str(e_))
+    antes = set(os.listdir(os.path.join(pasta_, "imagens", "corridas"))); assert antes == {p1["logo"]}, "recusadas não deixam arquivo"
+    e1 = editor.editar_prova(pasta_, l1[0]["id"], {"nome": "Corrida Dois", "dist_km": "21,1"}, v1)
+    assert e1["logo"] == p1["logo"] and e1["dist_km"] == 21.1 and e1["data"] == "2026-10-18"
+    l2, v2 = editor.listar_provas(pasta_)
+    e2 = editor.editar_prova(pasta_, l2[0]["id"], {"logo_b64": img64, "logo_ext": "png"}, v2)
+    assert e2["logo"] != p1["logo"] and not os.path.exists(os.path.join(pasta_, "imagens", "corridas", p1["logo"])), "logo antigo removido"
+    l3, v3 = editor.listar_provas(pasta_)
+    try: editor.editar_prova(pasta_, 999, {"nome": "X"}, v3); raise SystemExit("id inexistente")
+    except editor.ErroEdicao as e_: assert e_.codigo == 404
+    editor.apagar_prova(pasta_, l3[0]["id"], v3)
+    assert editor.listar_provas(pasta_)[0] == [] and os.listdir(os.path.join(pasta_, "imagens", "corridas")) == [], "apagar remove o logo sem uso"
+    assert "# meu comentário" in open(os.path.join(pasta_, "provas.txt"), encoding="utf-8").read()
+    open(os.path.join(pasta_, "imagens", "corridas", "meu-logo-manual.png"), "wb").write(png())          # arquivo que NÓS não criamos
+    open(os.path.join(pasta_, "provas.txt"), "a", encoding="utf-8").write("2026-05-01; Manual; 5; meu-logo-manual.png\n")
+    lm, vm = editor.listar_provas(pasta_); editor.apagar_prova(pasta_, lm[0]["id"], vm)
+    assert os.path.exists(os.path.join(pasta_, "imagens", "corridas", "meu-logo-manual.png")), "nunca apaga arquivo que não criamos"
+    pf = editor.salvar_perfil(pasta_, {"nome": "Novo Nome", "frase": "Nova frase", "foto_b64": img64, "foto_ext": "jpg" if False else "png"})
+    assert re.fullmatch(r"foto-[0-9a-f]{6}\.png", pf["foto"]); ptxt = open(os.path.join(pasta_, "perfil.txt"), encoding="utf-8").read()
+    assert "# perfil" in ptxt and "nome: Novo Nome" in ptxt and ptxt.count("nome:") == 1
+    try: editor.salvar_perfil(pasta_, {"nome": "  "}); raise SystemExit("nome vazio")
+    except editor.ErroEdicao: pass
+
+    # 26) editor: servidor local (autenticação, Host, Origin, tipos, tamanhos, ataques simples)
+    rodar(["--so-visual", "--sem-abrir"])
+    regs = []
+    httpd, tok, porta_srv = servidor.criar(pasta_, lambda: (regs.append(1), gp.redesenhar(30, False))[1], 18765, garmin=gp.competicoes_sem_logo)
+    assert httpd.server_address[0] == "127.0.0.1", "só neste computador"
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    def req(met, caminho, corpo=None, cab=None, host=None, ct="application/json"):
+        c_ = http.client.HTTPConnection("127.0.0.1", porta_srv, timeout=10)
+        h_ = {"Host": host or f"127.0.0.1:{porta_srv}", **(cab or {})}
+        if corpo is not None:
+            h_["Content-Type"] = ct; corpo = corpo if isinstance(corpo, (bytes, str)) else json.dumps(corpo)
+        c_.request(met, caminho, body=corpo, headers=h_); r_ = c_.getresponse(); b_ = r_.read().decode("utf-8", "replace"); c_.close()
+        return r_.status, b_, dict(r_.getheaders())
+    AUT = {"X-Token": tok}
+    assert tok not in open(os.path.join(pasta_, "painel.html"), encoding="utf-8").read(), "a senha nunca vai para o arquivo"
+    st, body, _ = req("GET", "/"); assert st == 403 and "Painel Garmin" in body and "Seu Nome" not in body and "<main>" not in body
+    st, body, hd = req("GET", f"/?t={tok}"); assert st == 200 and "window.EDITOR=" in body and tok in body and 'id="btn-editar"' in body
+    assert "default-src 'none'" in hd["Content-Security-Policy"] and "img-src data: blob:" in hd["Content-Security-Policy"] and "http" not in hd["Content-Security-Policy"].replace("http://", "") and hd["Cache-Control"] == "no-store"
+    st, _, _ = req("GET", f"/?t={tok}", host="evil.example:80"); assert st == 403, "Host estranho (DNS rebinding)"
+    st, _, _ = req("GET", f"/?t={tok}x"); assert st == 403, "senha errada"
+    st, _, _ = req("GET", "/api/estado"); assert st == 403
+    st, body, _ = req("GET", "/api/estado", cab=AUT); est = json.loads(body); assert st == 200 and est["perfil"]["nome"] == "Novo Nome" and est["provas"] == []
+    assert any(c["nome"] for c in est["garmin"]) or est["garmin"] == [], "lista de competições da Garmin"
+    nova = {"nome": "Prova Web", "data": "2026-10-18", "dist_km": "10", "logo_b64": img64, "logo_ext": "png", "versao": est["versao_provas"]}
+    st, _, _ = req("POST", "/api/provas", nova); assert st == 403, "sem senha"
+    st, _, _ = req("POST", "/api/provas", nova, cab={**AUT, "Origin": "http://evil.example"}); assert st == 403, "Origin de outro site"
+    st, _, _ = req("POST", "/api/provas", json.dumps(nova), cab=AUT, ct="text/plain"); assert st == 415, "formulário de outro site"
+    st, _, _ = req("POST", "/api/provas", "{nao json", cab=AUT); assert st == 400
+    c_ = http.client.HTTPConnection("127.0.0.1", porta_srv, timeout=10)
+    c_.request("POST", "/api/provas", headers={"Host": f"127.0.0.1:{porta_srv}", "Content-Type": "application/json", "Content-Length": "9000000", **AUT})
+    assert c_.getresponse().status == 413; c_.close()
+    assert editor.listar_provas(pasta_)[0] == [], "nada foi gravado pelos pedidos recusados"
+    st, body, _ = req("POST", "/api/provas", nova, cab=AUT); assert st == 200 and json.loads(body)["ok"], body
+    assert len(regs) == 1 and "Prova Web" in painel(), "gravou e recriou o painel"
+    st, body, _ = req("GET", "/api/estado", cab=AUT); est2 = json.loads(body); assert len(est2["provas"]) == 1 and est2["provas"][0]["logo_uri"].startswith("data:image/png")
+    st, body, _ = req("POST", "/api/provas", {**nova, "versao": est["versao_provas"]}, cab=AUT); assert st == 409, "versão velha"
+    pid = est2["provas"][0]["id"]
+    st, body, _ = req("PUT", f"/api/provas/{pid}", {"nome": "Prova Web 2", "versao": est2["versao_provas"]}, cab=AUT); assert st == 200
+    st, _, _ = req("PUT", "/api/provas/abc", {"nome": "x"}, cab=AUT); assert st == 404
+    st, _, _ = req("PUT", "/api/provas/../../perfil", {"nome": "x"}, cab=AUT); assert st == 404, "sem caminhos"
+    st, _, _ = req("DELETE", f"/api/provas/{pid}?versao=velha", cab=AUT); assert st == 409
+    st, body, _ = req("GET", "/api/estado", cab=AUT); est3 = json.loads(body)
+    st, _, _ = req("DELETE", f"/api/provas/{pid}?versao={est3['versao_provas']}"); assert st == 403, "apagar sem senha"
+    st, _, _ = req("DELETE", f"/api/provas/{pid}?versao={est3['versao_provas']}", cab=AUT); assert st == 200 and editor.listar_provas(pasta_)[0] == []
+    st, body, _ = req("PUT", "/api/perfil", {"nome": "Outro Nome", "frase": "x", "versao": est3["versao_perfil"]}, cab=AUT); assert st == 200 and "Outro Nome" in painel()
+    st, body, _ = req("POST", "/api/provas", {"nome": "Ruim", "data": "ontem"}, cab=AUT); assert st == 400 and "data" in json.loads(body)["erro"].lower()
+    st, _, _ = req("GET", "/api/nada", cab=AUT); assert st == 404
+    httpd.shutdown(); httpd.server_close()
+    pg = painel(); assert 'id="btn-editar"' in pg and "<!--EDITOR_CFG-->" in pg and "window.EDITOR=" not in pg
+    assert "'.seletor button[data-n]'" in pg and "querySelectorAll('.seletor button')" not in pg, "o seletor de período não pode pegar o botão do editor"
+
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
     print("TODOS OS TESTES PASSARAM")

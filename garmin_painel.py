@@ -588,6 +588,37 @@ def periodo(dias):
     return hoje, min(ini, segunda(hoje.replace(day=1)))
 
 
+def competicoes_sem_logo():
+    """Competições marcadas na Garmin que o painel mostra sem logo (para o editor)."""
+    dados = armazem.carregar(caminho_armazem())
+    if not dados.get("ultima_busca"):
+        return []
+    co = corredor.montar(pasta_dados(), montar_atividades(armazem.todas_atividades(dados)),
+                         dt.date.today(), dados.get("cobertura_ini"))
+    return [{"data": p["data"].isoformat(), "nome": p["nome"],
+             "km": round(p["atv"]["dist_m"] / 1000, 2) if p.get("atv") and p["atv"].get("dist_m") else None}
+            for p in (co["feitas"] if co else []) if p.get("origem") == "garmin"]
+
+
+def redesenhar(dias=30, abrir=False):
+    """Recria o painel.html com os dados já guardados, sem consultar a Garmin."""
+    hoje, ini = periodo(dias)
+    dados = armazem.carregar(caminho_armazem())
+    if not dados.get("ultima_busca"):
+        raise Erro("Ainda não há dados guardados. Rode uma vez sem --so-visual "
+                   "para buscar na Garmin.")
+    quando = dt.datetime.fromisoformat(dados["atualizado_em"])
+    avisos = ["Visual redesenhado sem consultar a Garmin: dados de "
+              f"{quando.strftime('%d/%m/%Y %H:%M')}."]
+    cob = dt.date.fromisoformat(dados["cobertura_ini"])
+    if ini < cob:     # não mostra como "sem dado" o que nunca foi buscado
+        ini = cob
+        avisos.append(f"Os dados guardados começam em {cob.strftime('%d/%m/%Y')}; "
+                      "para um período maior, atualize sem --so-visual.")
+    gerar(dados, hoje, ini, quando, avisos, abrir)
+    return avisos
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Painel pessoal Garmin")
     p.add_argument("--teste", action="store_true",
@@ -614,6 +645,10 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--servir", action="store_true",
+                   help="abre o painel com edição de provas e perfil (servidor só neste "
+                        "computador); use o atalho abrir_painel.bat")
+    p.add_argument("--porta", type=int, metavar="N", help="porta do --servir (padrão 8765)")
     p.add_argument("--rotas", action="store_true",
                    help="baixa as trilhas de GPS de TODAS as corridas que ainda faltam "
                         "(a atualização normal baixa só algumas por vez)")
@@ -677,21 +712,12 @@ def main(argv=None):
             return 0
         dias = max(1, min(a.dias, 365))
         if a.so_visual:
-            hoje, ini = periodo(dias)
-            dados = armazem.carregar(caminho_armazem())
-            if not dados.get("ultima_busca"):
-                raise Erro("Ainda não há dados guardados. Rode uma vez sem "
-                           "--so-visual para buscar na Garmin.")
-            quando = dt.datetime.fromisoformat(dados["atualizado_em"])
-            avisos = ["Visual redesenhado sem consultar a Garmin: dados de "
-                      f"{quando.strftime('%d/%m/%Y %H:%M')}."]
-            cob = dt.date.fromisoformat(dados["cobertura_ini"])
-            if ini < cob:     # não mostra como "sem dado" o que nunca foi buscado
-                ini = cob
-                avisos.append(f"Os dados guardados começam em {cob.strftime('%d/%m/%Y')}; "
-                              "para um período maior, atualize sem --so-visual.")
-            gerar(dados, hoje, ini, quando, avisos, not a.sem_abrir)
+            redesenhar(dias, not a.sem_abrir)
             return 0
+        if a.servir:
+            import servidor
+            return servidor.servir(pasta_dados(), lambda: redesenhar(dias, False),
+                                   a.porta or 8765, not a.sem_abrir, competicoes_sem_logo)
         cli = Cliente(ler_chave())
         if a.teste_rota:
             modo_teste_rota(cli, a.data)

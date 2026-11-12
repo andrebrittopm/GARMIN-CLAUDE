@@ -850,10 +850,10 @@ h2{font:900 1.02rem/1.2 var(--titulo);letter-spacing:.03em;margin:0 0 4px;text-t
 .kpi.s .v{font-size:1.5rem;color:var(--tx)}
 .mut,.sd{color:var(--mut)}.sd{font-style:italic}
 .seletor{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:18px;color:var(--mut);font-size:.85rem}
-.seletor button,.csv{font:700 .8rem var(--mono);color:var(--tx);background:rgba(139,92,246,.12);
+.seletor button,.csv,.btn-editar{font:700 .8rem var(--mono);color:var(--tx);background:rgba(139,92,246,.12);
 border:1px solid var(--bd);border-radius:999px;padding:6px 14px;cursor:pointer}
 .seletor button:hover,.csv:hover{border-color:var(--roxo2)}
-.seletor button[aria-pressed=true]{background:var(--roxo);border-color:var(--roxo2)}
+.seletor button[data-n][aria-pressed=true]{background:var(--roxo);border-color:var(--roxo2)}
 button:focus-visible,th.ord:focus-visible{outline:2px solid var(--roxo2);outline-offset:2px}
 .per{display:none}
 .ch{width:100%;height:auto;display:block}
@@ -974,12 +974,42 @@ background:radial-gradient(circle at 50% 35%,#2b1f4d,#140d26);border:3px solid v
 .medalha .t1{font:900 .85rem var(--titulo);font-style:italic;text-transform:uppercase}
 .medalha .t2{font-size:.78rem;color:var(--mut)}
 @media(max-width:560px){.hero-in{grid-template-columns:1fr}.avatar{width:110px;height:110px}.bib{grid-template-columns:auto 1fr}.conta,.num{grid-column:1/-1;flex-direction:row;gap:8px}}
+
+.btn-editar{margin-left:auto}
+dialog#editor{width:min(760px,94vw);max-height:90vh;padding:0;border:1px solid var(--roxo2);border-radius:20px;
+background:#150f26;color:var(--tx);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+dialog#editor::backdrop{background:rgba(5,3,12,.75)}
+.ed-box{padding:20px 22px;max-height:90vh;overflow:auto}
+.ed-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.ed-top h2{margin:0}
+.ed-abas{display:flex;gap:8px;margin:6px 0 14px}
+.ed-abas button,.ed-btn{font:700 .82rem var(--mono);color:var(--tx);background:rgba(139,92,246,.14);border:1px solid var(--bd);
+border-radius:999px;padding:7px 14px;cursor:pointer}
+.ed-abas button[aria-pressed=true],.ed-btn.pri{background:var(--roxo);border-color:var(--roxo2)}
+.ed-btn.perigo{border-color:#D55181;color:#ffb3cc}
+.ed-btn:hover,.ed-abas button:hover{border-color:var(--roxo2)}
+.ed-lin{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}
+.ed-lin img,.ed-ph{width:48px;height:48px;border-radius:10px;object-fit:contain;background:#fff}
+.ed-ph{display:grid;place-items:center;background:rgba(139,92,246,.18);color:var(--mut);font:700 .7rem var(--mono)}
+.ed-lin .n{font-weight:700}.ed-lin .d{color:var(--mut);font-size:.82rem}
+.ed-acoes{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ed-form{display:grid;gap:12px;margin-top:8px}
+.ed-form label{display:grid;gap:4px;font-size:.85rem;color:var(--mut)}
+.ed-form input[type=text],.ed-form input[type=date],.ed-form input[type=number]{font:inherit;color:var(--tx);background:#0d0918;
+border:1px solid var(--bd);border-radius:10px;padding:9px 11px}
+.ed-form input:focus-visible{outline:2px solid var(--roxo2)}
+.ed-prev{width:84px;height:84px;object-fit:contain;background:#fff;border-radius:12px}
+.ed-prev.foto{border-radius:50%;object-fit:cover}
+.ed-erro{min-height:1.2em;color:#ffb3cc;font-size:.88rem}
+.ed-aviso{color:var(--ouro);font-size:.85rem}
+.ed-dica{color:var(--mut);font-size:.8rem}
+.ed-sec{margin:18px 0 4px;font:900 .8rem var(--titulo);text-transform:uppercase;font-style:italic;color:var(--roxo2)}
 @media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
 @media print{
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
 --roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
 html,body{background:#fff!important;background-image:none!important}
-.seletor,.barra,#tip,#velho{display:none!important}
+.seletor,.barra,#tip,#velho,dialog#editor{display:none!important}
 .card,.kpi,.tw{break-inside:avoid;box-shadow:none}
 .tw{overflow:visible}main{max-width:none;padding:0}
 .ch .hit{display:none}
@@ -1017,14 +1047,14 @@ document.addEventListener('mouseleave',function(){tip.style.display='none';atual
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function periodo(n){
   corpo.setAttribute('data-n',n);
-  document.querySelectorAll('.seletor button').forEach(function(b){
+  document.querySelectorAll('.seletor button[data-n]').forEach(function(b){
     b.setAttribute('aria-pressed',b.getAttribute('data-n')===String(n)?'true':'false');});
   var h=corpo.getAttribute('data-hoje').split('-'),f=new Date(+h[0],+h[1]-1,+h[2]);
   f.setDate(f.getDate()-(n-1));var corte=iso(f);
   document.querySelectorAll('tr[data-d]').forEach(function(tr){tr.hidden=tr.getAttribute('data-d')<corte;});
   tip.style.display='none';
 }
-document.querySelectorAll('.seletor button').forEach(function(b){
+document.querySelectorAll('.seletor button[data-n]').forEach(function(b){
   b.addEventListener('click',function(){periodo(+b.getAttribute('data-n'));});});
 periodo(+corpo.getAttribute('data-n'));
 
@@ -1072,6 +1102,103 @@ document.querySelectorAll('button.csv').forEach(function(b){
         a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download='painel-'+tab.getAttribute('data-nome')+'.csv';document.body.appendChild(a);
     a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href);},1000);});});
+})();
+"""
+
+EDITOR_JS = """
+(function(){
+var cfg=window.EDITOR||null,dlg=document.getElementById('editor'),btn=document.getElementById('btn-editar');
+if(!btn||!dlg||!dlg.showModal)return;
+var box=dlg.querySelector('.ed-box'),estado=null,aba='provas';
+function h(tag,at){var e=document.createElement(tag);at=at||{};
+  for(var k in at){if(k==='class')e.className=at[k];else if(k==='text')e.textContent=at[k];
+    else if(k.indexOf('on')===0)e.addEventListener(k.slice(2),at[k]);else e.setAttribute(k,at[k]);}
+  for(var i=2;i<arguments.length;i++){var c=arguments[i];if(c==null)continue;e.appendChild(typeof c==='string'?document.createTextNode(c):c);}return e;}
+function api(m,u,c){return fetch(u,{method:m,headers:{'Content-Type':'application/json','X-Token':cfg.token},
+  body:c?JSON.stringify(c):undefined}).then(function(r){return r.json().then(function(j){
+    if(!r.ok)throw new Error(j.erro||'Não foi possível concluir.');return j;});});}
+function dataBr(iso){var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+function numBr(v){return v==null?'':String(v).replace('.',',');}
+function arq(input){return new Promise(function(ok,no){var f=input.files&&input.files[0];if(!f)return ok(null);
+  if(f.size>2500000)return no(new Error('A imagem tem mais de 2,5 MB. Reduza-a e tente de novo.'));
+  var ext=(f.name.split('.').pop()||'').toLowerCase();
+  if(['png','jpg','jpeg','webp','gif','svg'].indexOf(ext)<0)return no(new Error('Use uma imagem png, jpg, webp, gif ou svg.'));
+  var r=new FileReader();r.onload=function(){ok({b64:String(r.result).split(',')[1],ext:ext});};
+  r.onerror=function(){no(new Error('Não consegui ler o arquivo.'));};r.readAsDataURL(f);});}
+function previa(input,img){input.addEventListener('change',function(){var f=input.files&&input.files[0];
+  if(f&&/^image\\//.test(f.type)){img.src=URL.createObjectURL(f);img.hidden=false;}});}
+function topo(){return h('div',{class:'ed-top'},h('h2',{id:'ed-t',text:'Provas e perfil'}),
+  h('button',{type:'button',class:'ed-btn',text:'Fechar',onclick:function(){dlg.close();}}));}
+function abas(){return h('div',{class:'ed-abas'},
+  h('button',{type:'button','aria-pressed':String(aba==='provas'),text:'Provas',onclick:function(){aba='provas';desenhar();}}),
+  h('button',{type:'button','aria-pressed':String(aba==='perfil'),text:'Perfil',onclick:function(){aba='perfil';desenhar();}}));}
+function ajuda(){box.textContent='';box.appendChild(topo());
+  box.appendChild(h('p',{text:'Esta página foi aberta direto do arquivo, e o navegador não deixa um arquivo gravar nada no seu computador.'}));
+  box.appendChild(h('p',{text:'Para editar, abra o painel pelo atalho "Abrir painel" (abrir_painel.bat), que liga a edição só neste computador.'}));
+  dlg.showModal();}
+function carregar(){return api('GET','/api/estado').then(function(e){estado=e;desenhar();}).catch(function(e){
+  box.textContent='';box.appendChild(topo());box.appendChild(h('p',{class:'ed-erro',text:e.message}));});}
+function salvou(j){if(j.aviso){alert(j.aviso);}location.reload();}
+function desenhar(){box.textContent='';box.appendChild(topo());box.appendChild(abas());
+  box.appendChild(aba==='provas'?listaProvas():formPerfil());}
+function listaProvas(){var w=h('div');
+  w.appendChild(h('button',{type:'button',class:'ed-btn pri',text:'+ Adicionar prova',onclick:function(){formProva(null);}}));
+  var fut=[],pas=[],hoje=document.body.getAttribute('data-hoje');
+  estado.provas.forEach(function(p){(p.data>hoje?fut:pas).push(p);});
+  fut.sort(function(a,b){return a.data<b.data?-1:1;});pas.sort(function(a,b){return a.data<b.data?1:-1;});
+  [['Próximas',fut],['Já corridas',pas]].forEach(function(g){if(!g[1].length)return;
+    w.appendChild(h('div',{class:'ed-sec',text:g[0]}));
+    g[1].forEach(function(p){w.appendChild(h('div',{class:'ed-lin'},
+      p.logo_uri?h('img',{src:p.logo_uri,alt:'Logo'}):h('div',{class:'ed-ph',text:'sem logo'}),
+      h('div',{},h('div',{class:'n',text:p.nome==='*'?'(nome da Garmin)':p.nome}),
+        h('div',{class:'d',text:dataBr(p.data)+(p.dist_km?' · '+numBr(p.dist_km)+' km':'')})),
+      h('div',{class:'ed-acoes'},
+        h('button',{type:'button',class:'ed-btn',text:'✎ Editar',onclick:function(){formProva(p);}}),
+        h('button',{type:'button',class:'ed-btn perigo',text:'✕ Apagar',onclick:function(){apagar(p);}}))));});});
+  if(!estado.provas.length)w.appendChild(h('p',{class:'ed-dica',text:'Nenhuma prova cadastrada ainda.'}));
+  if(estado.garmin&&estado.garmin.length){w.appendChild(h('div',{class:'ed-sec',text:'Competições marcadas na Garmin, sem logo'}));
+    estado.garmin.forEach(function(c){w.appendChild(h('div',{class:'ed-lin'},h('div',{class:'ed-ph',text:'Garmin'}),
+      h('div',{},h('div',{class:'n',text:c.nome}),h('div',{class:'d',text:dataBr(c.data)+(c.km?' · '+numBr(c.km)+' km':'')})),
+      h('div',{class:'ed-acoes'},h('button',{type:'button',class:'ed-btn',text:'Colocar logo',
+        onclick:function(){formProva({id:null,data:c.data,nome:'*',dist_km:null,logo:'',so_logo:true});}}))));});}
+  return w;}
+function apagar(p){if(!confirm('Apagar a prova "'+(p.nome==='*'?'(nome da Garmin)':p.nome)+'"?'))return;
+  api('DELETE','/api/provas/'+p.id+'?versao='+encodeURIComponent(estado.versao_provas)).then(salvou).catch(function(e){alert(e.message);});}
+function formProva(p){var novo=!p||p.id==null,so=p&&p.so_logo;box.textContent='';box.appendChild(topo());
+  var erro=h('div',{class:'ed-erro',role:'alert'}),prev=h('img',{class:'ed-prev',alt:'Prévia do logo',hidden:'hidden'});
+  if(p&&p.logo_uri){prev.src=p.logo_uri;prev.hidden=false;}
+  var nome=h('input',{type:'text',maxlength:'120',value:p&&p.nome!=='*'?p.nome:(p?p.nome:''),id:'f-nome'});
+  var data=h('input',{type:'date',value:p?p.data:'',id:'f-data'});
+  var dist=h('input',{type:'text',inputmode:'decimal',maxlength:'8',placeholder:'ex.: 10 ou 21,1',value:p&&p.dist_km?numBr(p.dist_km):'',id:'f-dist'});
+  var logo=h('input',{type:'file',accept:'image/*',id:'f-logo'});previa(logo,prev);logo.addEventListener('change',function(){erro.textContent='';});
+  var rem=h('input',{type:'checkbox',id:'f-rem'});
+  var f=h('form',{class:'ed-form',onsubmit:function(ev){ev.preventDefault();salvarProva();}});
+  if(!so){f.appendChild(h('label',{},'Nome da prova',nome));
+    f.appendChild(h('div',{class:'ed-dica',text:'Dica: escreva * no nome para usar o nome da atividade na Garmin.'}));
+    f.appendChild(h('label',{},'Data da prova',data));f.appendChild(h('label',{},'Distância em km (opcional)',dist));}
+  else{f.appendChild(h('p',{text:'Competição: '+dataBr(p.data)+' (o nome vem da Garmin).'}));}
+  f.appendChild(h('label',{},'Logo (imagem do seu computador)',logo));f.appendChild(prev);
+  if(!novo&&p.logo)f.appendChild(h('label',{},h('span',{},rem,' Remover o logo atual')));
+  f.appendChild(erro);
+  f.appendChild(h('div',{class:'ed-acoes'},h('button',{type:'submit',class:'ed-btn pri',text:'Salvar'}),
+    h('button',{type:'button',class:'ed-btn',text:'Cancelar',onclick:desenhar})));
+  box.appendChild(h('div',{class:'ed-sec',text:novo?(so?'Colocar logo':'Nova prova'):'Editar prova'}));box.appendChild(f);
+  function salvarProva(){erro.textContent='';arq(logo).then(function(a){
+    var c={versao:estado.versao_provas};
+    if(!so){c.nome=nome.value;c.data=data.value;c.dist_km=dist.value;}else{c.nome='*';c.data=p.data;}
+    if(a){c.logo_b64=a.b64;c.logo_ext=a.ext;}if(rem.checked)c.remover_logo=true;
+    return novo?api('POST','/api/provas',c):api('PUT','/api/provas/'+p.id,c);}).then(salvou).catch(function(e){erro.textContent=e.message;});}}
+function formPerfil(){var pf=estado.perfil,erro=h('div',{class:'ed-erro',role:'alert'});
+  var prev=h('img',{class:'ed-prev foto',alt:'Foto atual',hidden:'hidden'});if(pf.foto_uri){prev.src=pf.foto_uri;prev.hidden=false;}
+  var nome=h('input',{type:'text',maxlength:'80',value:pf.nome}),frase=h('input',{type:'text',maxlength:'160',value:pf.frase});
+  var foto=h('input',{type:'file',accept:'image/*'});previa(foto,prev);foto.addEventListener('change',function(){erro.textContent='';});
+  var f=h('form',{class:'ed-form',onsubmit:function(ev){ev.preventDefault();erro.textContent='';arq(foto).then(function(a){
+    var c={versao:estado.versao_perfil,nome:nome.value,frase:frase.value};if(a){c.foto_b64=a.b64;c.foto_ext=a.ext;}
+    return api('PUT','/api/perfil',c);}).then(salvou).catch(function(e){erro.textContent=e.message;});}},
+    h('label',{},'Seu nome',nome),h('label',{},'Frase (opcional)',frase),h('label',{},'Foto',foto),prev,erro,
+    h('div',{class:'ed-acoes'},h('button',{type:'submit',class:'ed-btn pri',text:'Salvar perfil'})));
+  return f;}
+btn.addEventListener('click',function(){if(!cfg){ajuda();return;}dlg.showModal();carregar();});
 })();
 """
 
@@ -1209,7 +1336,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
 {faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
-<span>Período:</span>{botoes}</div>
+<span>Período:</span>{botoes}<button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></div>
+<dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>
 {"".join(blocos)}
 
 <h2 class="t">Semanas — corridas (segunda a domingo)</h2>{t_sem}
@@ -1225,4 +1353,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main><div id="tip"></div><script>{JS}</script></body></html>""", omitidos
+</main><div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script></body></html>""", omitidos

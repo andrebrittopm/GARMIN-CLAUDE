@@ -30,6 +30,8 @@ diagnóstico e sem conselho de treino.
 | `visual.py` | Desenha a página e os gráficos | Não |
 | `diagnostico.py`, `configuracao.py` | Conferência geral e data de vencimento da chave | Não |
 | `metas.py` | Suas metas e o progresso delas | Não |
+| `editor.py`, `servidor.py` | Edição de provas e perfil pelo painel (servidor local) | Não |
+| `abrir_painel.bat` | Abre o painel com edição | Sim |
 | `corredor.py`, `arte.py`, `rotas.py` | Perfil, provas e logos; desenhos; trilhas de GPS | Não |
 | `libs/`, `requirements-fit.txt` | Biblioteca oficial da Garmin (FIT) e a versão fixa dela | Não |
 | `rotas.json` | Trilhas de GPS simplificadas (**dados de localização**, só neste computador) | Não |
@@ -109,6 +111,21 @@ Edite os dois `.txt` no Bloco de Notas e salve; depois rode `redesenhar.bat`. De
 - Sem `perfil.txt`, o painel mantém o cabeçalho clássico.
 - A soma "no ano" só aparece como do ano quando o histórico guardado começa em 1º de janeiro;
   antes disso ela diz "desde dd/mm". Rode `--historico 365` para completar.
+
+### Editar provas e perfil direto no painel
+
+Dê dois cliques em **`abrir_painel.bat`**: ele liga um miniservidor **só neste computador** (não é
+acessível pela rede nem pela internet) e abre o painel no navegador. Use o botão **✎ Provas e perfil**:
+
+- **Provas:** adicionar, editar (✎) e apagar (✕), com calendário e escolha do logo pelo seu computador.
+  Competições marcadas na Garmin sem logo aparecem com o botão **Colocar logo**.
+- **Perfil:** nome, frase e foto.
+- Ao salvar, o painel é recriado e a página recarrega. O `provas.txt` e o `perfil.txt` continuam
+  editáveis no Bloco de Notas; comentários e linhas que o painel não entende são preservados.
+- Para encerrar, **feche a janela preta**. Abrindo o `painel.html` direto do arquivo, o botão só explica
+  como editar (um arquivo solto não pode gravar nada no computador).
+- Segurança: senha aleatória a cada abertura (está no endereço), só aceita o próprio painel, só grava
+  em `provas.txt`, `perfil.txt` e `imagens\`, e só aceita imagens de verdade (até 2,5 MB).
 
 ### Rotas e percursos (opcional)
 
