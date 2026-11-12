@@ -26,7 +26,7 @@ MAX_EVENTOS = 200
 DIAS_ADIANTE = 21
 DIAS_ATRAS = 1
 CATEGORIAS = {"WORKOUT": "Treino", "NOTE": "Anotação", "RACE_A": "Prova", "RACE_B": "Prova",
-              "RACE_C": "Prova", "TARGET": "Meta", "HOLIDAY": "Folga", "SICK": "Doença",
+              "RACE_C": "Prova", "TARGET": "Meta", "HOLIDAY": "Dia marcado", "SICK": "Doença",
               "INJURED": "Lesão", "SET_EFTP": "Ajuste", "FITNESS_DAYS": "Ajuste", "SEASON_START": "Temporada",
               "SET_FITNESS": "Ajuste"}
 
