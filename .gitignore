@@ -18,3 +18,6 @@ backup_programa/
 versao.txt
 plano.json
 intervals.json
+backups_pessoais/
+backup_restauracao/
+*.zip

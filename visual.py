@@ -188,8 +188,14 @@ def svg(h, corpo, rotulo, defs=""):
 
 
 def cartao(titulo, sub, corpo, extra=""):
-    return (f'<section class="card {extra}"><h2>{esc(titulo)}</h2>'
-            f'<p class="sub">{esc(sub)}</p>{corpo}</section>')
+    return (f'<details class="card sec {extra}" open><summary><h2>{esc(titulo)}</h2>'
+            f'<p class="sub">{esc(sub)}</p></summary>{corpo}</details>')
+
+
+def secao_tabela(titulo, corpo, sub=""):
+    """Seção de tabela que recolhe (mesmo comportamento dos cartões)."""
+    return (f'<details class="sec sec-t" open><summary><h2 class="t">{esc(titulo)}</h2></summary>'
+            + (f'<p class="sub">{esc(sub)}</p>' if sub else "") + f"{corpo}</details>")
 
 
 def chip(cor, texto, estilo="quad"):
@@ -1111,6 +1117,16 @@ PLANO_CSS = """
 .cal-i li{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
 .cal-c{font:700 .68rem var(--mono);color:var(--roxo2);text-transform:uppercase;border:1px solid var(--bd);border-radius:999px;padding:1px 8px}
 @media(max-width:560px){.cal-l{grid-template-columns:1fr}}
+details.sec>summary{list-style:none;cursor:pointer;position:relative;padding-right:34px;border-radius:10px}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::after{content:"▾";position:absolute;right:4px;top:2px;color:var(--mut);font-size:1.1rem;transition:transform .15s}
+details.sec:not([open])>summary::after{transform:rotate(-90deg)}
+details.sec>summary:hover h2{color:var(--roxo2)}
+details.sec>summary h2.t{margin-top:30px}
+details.sec>summary .sub{margin-bottom:12px}
+details.sec:not([open])>summary .sub{margin-bottom:2px}
+details.sec-t{margin-top:0}
+@media (prefers-reduced-motion:reduce){details.sec>summary::after{transition:none}}
 .rumo-txt{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 16px;font-size:.82rem}
 .ciclos{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:8px;margin-top:6px}
 .ci{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px 5px;border-radius:10px;
@@ -1134,6 +1150,23 @@ tr.z1 td:first-child{box-shadow:inset 4px 0 0 #009E73}tr.z2 td:first-child{box-s
 tr.z3 td:first-child{box-shadow:inset 4px 0 0 #E69F00}tr.z4 td:first-child{box-shadow:inset 4px 0 0 #D55E00}
 i.z1{background:#009E73}i.z2{background:#F0E442}i.z3{background:#E69F00}i.z4{background:#D55E00}
 @media(max-width:560px){.ciclos{grid-template-columns:repeat(auto-fill,minmax(40px,1fr))}.rumo .v{font-size:1.7rem}}
+"""
+
+SECOES_JS = """
+(function(){
+var secs=Array.prototype.slice.call(document.querySelectorAll('details.sec')),btn=document.getElementById('btn-recolher'),KEY='painel-secoes';
+function nome(d){var h=d.querySelector('summary h2');return h?h.textContent.trim():'';}
+function ler(){try{var v=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
+function gravar(){try{localStorage.setItem(KEY,JSON.stringify(secs.filter(function(d){return !d.open;}).map(nome)));}catch(e){}}
+function rotulo(){if(!btn)return;var algum=secs.some(function(d){return d.open;});
+  btn.textContent=algum?'▴ Recolher tudo':'▾ Expandir tudo';btn.setAttribute('aria-expanded',algum?'true':'false');}
+var fechadas=ler();secs.forEach(function(d){if(fechadas.indexOf(nome(d))>=0)d.open=false;d.addEventListener('toggle',function(){gravar();rotulo();});});
+if(btn)btn.addEventListener('click',function(){var abrir=!secs.some(function(d){return d.open;});secs.forEach(function(d){d.open=abrir;});gravar();rotulo();});
+var guardado=null;
+window.addEventListener('beforeprint',function(){guardado=secs.map(function(d){return d.open;});secs.forEach(function(d){d.open=true;});});
+window.addEventListener('afterprint',function(){if(guardado)secs.forEach(function(d,i){d.open=guardado[i];});guardado=null;});
+rotulo();
+})();
 """
 
 PLANO_JS = """
@@ -1785,15 +1818,15 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
 {faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
-<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
+<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
 <div class="faixa" id="atu-status" role="status" hidden><b>Atualização</b><span></span><button type="button" class="ed-btn" id="atu-fechar" hidden>Fechar</button></div>
 <dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>
 {"".join(blocos)}
 
-<h2 class="t">Semanas — corridas (segunda a domingo)</h2>{t_sem}
-<h2 class="t">Atividades</h2>{legenda_ritmo}{t_at}
-{('<h2 class="t">Recordes pessoais — corridas</h2><p class="sub">' + esc(txt_hist) + '</p>' + t_mel) if t_mel else ""}
-<h2 class="t">Dados diários</h2>{t_d}
+{secao_tabela("Semanas — corridas (segunda a domingo)", t_sem)}
+{secao_tabela("Atividades", legenda_ritmo + t_at)}
+{secao_tabela("Recordes pessoais — corridas", t_mel, txt_hist) if t_mel else ""}
+{secao_tabela("Dados diários", t_d)}
 {aviso_html}
 <p class="nota">Todos os números vêm da Garmin Connect Personal API. “sem dado” (ou espaço
 vazio nos gráficos) = a Garmin não enviou esse valor; nunca é preenchido com zero. Dias em
@@ -1803,4 +1836,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script></body></html>""", omitidos
+</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script></body></html>""", omitidos

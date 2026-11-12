@@ -41,6 +41,7 @@ diagnóstico e sem conselho de treino.
 | `perfil.txt`, `provas.txt`, `imagens\\` | Seu nome, suas provas, foto e logos | **Sim** |
 | `plano.json`, `plano.py` | Sua meta, ciclos e selos (opcional) e as contas do plano de prova | **Sim** (o .json) |
 | `intervals.py`, `intervals.json` | Calendário do intervals.icu (opcional, só leitura; a chave fica no cofre) | Não |
+| `backup.py`, `backup_pessoal.bat`, `backups_pessoais\\` | Cópia de segurança (ZIP) dos seus arquivos pessoais | Sim (o .bat) |
 | `dados_brutos.json` | Seus dados guardados (**dados de saúde**, sem chave) | Não |
 | `backups/` | Até 5 cópias diárias do arquivo acima | Só para restaurar |
 | `ultimo_log.txt` | O que a última atualização automática fez | Para olhar |
@@ -195,6 +196,22 @@ Formato do `plano.json` (campos que faltarem ou estiverem errados são ignorados
 ```
 `altitude_km` tem um valor por km, de 0 até a distância da prova (11 valores para 10 km). O arquivo fica
 só no seu computador (não vai para o GitHub).
+
+### Seções que recolhem
+Clique no título de qualquer cartão ou tabela para recolher (e de novo para abrir). O botão
+**▴ Recolher tudo / ▾ Expandir tudo**, ao lado de "Atualizar agora", faz isso com todas de uma vez.
+O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo abre sozinho.
+
+### Cópia de segurança dos seus arquivos pessoais
+Dê dois cliques em **`backup_pessoal.bat`** (ou rode `py garmin_painel.py --backup-pessoal`). Cria um ZIP em
+`backups_pessoais\` com seu perfil, provas, plano, configurações, foto e logos (guarda os 10 mais recentes).
+- **Não entram**: a chave da Garmin, a do intervals.icu e o token (ficam só no cofre do Windows). Depois de
+  restaurar num computador novo, guarde as chaves de novo (seções 6 e do intervals.icu).
+- Para incluir também os dados de saúde e as rotas: `py garmin_painel.py --backup-pessoal --com-dados`.
+  Esse ZIP é **sensível** (saúde e localização): guarde com cuidado e não envie a ninguém.
+- Restaurar (por exemplo, num computador novo): `py garmin_painel.py --restaurar-backup backups_pessoais\ARQUIVO.zip`.
+  Ele mostra o que vai mudar, pede confirmação e guarda o que for substituído em `backup_restauracao\`.
+  Só restaura os nomes do painel; qualquer outro arquivo do ZIP é ignorado.
 
 ### Próximos dias do intervals.icu (opcional)
 Mostra o que está marcado no seu calendário do intervals.icu nos próximos 14 dias (treinos, anotações, plantões).

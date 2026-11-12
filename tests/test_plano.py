@@ -125,6 +125,8 @@ with tempfile.TemporaryDirectory() as pasta:
                    'data-d="42"', "Previsão de hoje", "Meta da prova (41:30)", "ajustado ao relevo", "Equiv. 10 km", "abaixo de 5 km",
                    'class="z', "Riegel", "Riegel costuma dar"):
         assert trecho in pag, trecho
+    assert pag.count('<details class="card sec') >= 6 and pag.count("</details>") == pag.count("<details") and 'id="btn-recolher"' in pag
+    assert pag.count('<details class="sec sec-t" open>') == 4 and "painel-secoes" in pag and "beforeprint" in pag, "seções recolhíveis"
     assert pag.count('class="pl-d') == 5 and pag.count('class="pl-d on"') == 1
     ref_antes, _ = visual.pagina(dias, HIST, ini, HOJE, agora, historico=HIST)
     assert "Rumo à prova" not in ref_antes and "Trilha dos ciclos" not in ref_antes and "Plano de prova" not in ref_antes

@@ -43,6 +43,7 @@ import webbrowser
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
 import atualizador  # noqa: E402
+import backup  # noqa: E402
 import configuracao  # noqa: E402
 import corredor  # noqa: E402
 import diagnostico  # noqa: E402
@@ -791,6 +792,12 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--backup-pessoal", action="store_true",
+                   help="cria um ZIP com seus arquivos pessoais (perfil, provas, plano, fotos, logos) em backups_pessoais/")
+    p.add_argument("--com-dados", action="store_true",
+                   help="com --backup-pessoal: inclui também os dados de saúde e as rotas (ZIP sensível)")
+    p.add_argument("--restaurar-backup", metavar="ARQUIVO.zip",
+                   help="restaura os arquivos pessoais de um ZIP criado por --backup-pessoal")
     p.add_argument("--guardar-chave-intervals", action="store_true",
                    help="guarda no cofre do Windows a chave do intervals.icu que você COPIOU (Ctrl+C); "
                         "ela não é mostrada nem digitada")
@@ -872,6 +879,14 @@ def main(argv=None):
             print("Criados: " + (", ".join(feitos) if feitos else "nada novo (já existiam)")
                   + f"\nPasta: {pasta_dados()}\nColoque sua foto em imagens\\ e os logos em imagens\\corridas\\.")
             return 0
+        if a.backup_pessoal:
+            cam, itens = backup.criar(pasta_dados(), a.com_dados)
+            print(f"Cópia criada: {cam}\n{len(itens)} arquivo(s): " + ", ".join(itens[:8]) + ("..." if len(itens) > 8 else "")
+                  + ("\nATENÇÃO: este ZIP tem dados de saúde e de localização; guarde com cuidado." if a.com_dados else "")
+                  + "\nA chave da Garmin e a do intervals.icu NÃO entram (ficam só no cofre do Windows).")
+            return 0
+        if a.restaurar_backup:
+            return backup.restaurar(pasta_dados(), a.restaurar_backup, True)
         if a.guardar_chave_intervals:
             return guardar_chave_intervals()
         if a.intervals_atleta:
@@ -930,7 +945,7 @@ def main(argv=None):
             executar_atualizacao(dias, not a.sem_abrir, a.historico, a.rotas, cli)
             avisar_chave(a)
         return 0
-    except (Erro, ErroCofre, rotas.ErroRota, atualizador.ErroAtualizador) as e:
+    except (Erro, ErroCofre, rotas.ErroRota, atualizador.ErroAtualizador, backup.ErroBackup) as e:
         print(f"ERRO: {e}")
         avisar_falha(a, str(e))
         return 1
