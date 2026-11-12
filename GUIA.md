@@ -202,6 +202,13 @@ Clique no título de qualquer cartão ou tabela para recolher (e de novo para ab
 **▴ Recolher tudo / ▾ Expandir tudo**, ao lado de "Atualizar agora", faz isso com todas de uma vez.
 O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo abre sozinho.
 
+### Organizar os blocos
+Clique em **⇅ Organizar** (ao lado de "Atualizar agora"). Abre uma lista com todos os blocos do painel:
+suba ou desça com **▲ ▼**, ou arraste pelo **⠿** (no computador). Desmarque **mostrar** para esconder um bloco; ele continua
+na lista, e é só marcar de novo para voltar. A página muda na hora e o painel lembra a sua escolha neste navegador
+(**Restaurar ordem original** desfaz tudo). O topo com sua foto, os números da semana e os botões ficam sempre no lugar.
+Blocos novos que aparecerem depois (por exemplo, ao ligar o plano ou o intervals.icu) entram ao lado do vizinho original.
+
 ### Tema claro
 O botão **☀ Tema claro / ☾ Tema escuro** (ao lado de "Atualizar agora") alterna o visual. O painel lembra a sua escolha
 neste navegador. O topo com sua foto, os desenhos das rotas e as medalhas continuam escuros de propósito, para os desenhos

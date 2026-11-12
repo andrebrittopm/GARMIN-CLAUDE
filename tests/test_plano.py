@@ -1,6 +1,6 @@
 """Testes do plano.json, do equivalente de Riegel, dos ciclos, dos selos e do plano de prova.
 Dados inventados; não usa chave nem conta. Gera tests/saida/painel_plano.html."""
-import datetime as dt, json, os, sys, tempfile
+import datetime as dt, json, os, re, shutil, subprocess, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import plano, garmin_painel as gp, visual
 
@@ -128,7 +128,17 @@ with tempfile.TemporaryDirectory() as pasta:
     assert pag.count('<details class="card sec') >= 6 and pag.count("</details>") == pag.count("<details") and 'id="btn-recolher"' in pag
     assert 'id="btn-tema"' in pag and "html[data-tema=claro] body" in pag and "@@" not in pag and pag.count("painel-tema") >= 3, "tema claro"
     assert pag.index("painel-tema") < pag.index("<main>"), "o tema é aplicado antes do corpo (sem piscar)"
-    assert pag.count('<details class="sec sec-t" open>') == 4 and "painel-secoes" in pag and "beforeprint" in pag, "seções recolhíveis"
+    assert 'id="btn-organizar"' in pag and 'id="organizar"' in pag and "painel-ordem" in pag
+    movs = re.findall(r'<(?:details|div)[^>]*data-mov="([^"]+)"', pag)
+    assert len(movs) >= 10 and len(set(movs)) == len(movs), "cada bloco tem um nome único para a ordenação"
+    assert pag.count('data-mov=') == len(movs)
+    # sintaxe de TODO o JavaScript da página (um \\n mal escapado já derrubou o botão uma vez)
+    if shutil.which("node"):
+        for i, js in enumerate(re.findall(r"<script>(.*?)</script>", pag, re.S)):
+            arq = os.path.join(pasta, f"s{i}.js"); open(arq, "w", encoding="utf-8").write(js)
+            r = subprocess.run(["node", "--check", arq], capture_output=True, text=True)
+            assert r.returncode == 0, (i, r.stderr[:300])
+    assert pag.count('<details class="sec sec-t" data-mov=') == 4 and "painel-secoes" in pag and "beforeprint" in pag, "seções recolhíveis"
     assert pag.count('class="pl-d') == 5 and pag.count('class="pl-d on"') == 1
     ref_antes, _ = visual.pagina(dias, HIST, ini, HOJE, agora, historico=HIST)
     assert "Rumo à prova" not in ref_antes and "Trilha dos ciclos" not in ref_antes and "Plano de prova" not in ref_antes

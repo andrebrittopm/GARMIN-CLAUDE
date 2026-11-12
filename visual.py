@@ -188,13 +188,13 @@ def svg(h, corpo, rotulo, defs=""):
 
 
 def cartao(titulo, sub, corpo, extra=""):
-    return (f'<details class="card sec {extra}" open><summary><h2>{esc(titulo)}</h2>'
+    return (f'<details class="card sec {extra}" data-mov="{esc(titulo)}" open><summary><h2>{esc(titulo)}</h2>'
             f'<p class="sub">{esc(sub)}</p></summary>{corpo}</details>')
 
 
 def secao_tabela(titulo, corpo, sub=""):
     """Seção de tabela que recolhe (mesmo comportamento dos cartões)."""
-    return (f'<details class="sec sec-t" open><summary><h2 class="t">{esc(titulo)}</h2></summary>'
+    return (f'<details class="sec sec-t" data-mov="{esc(titulo)}" open><summary><h2 class="t">{esc(titulo)}</h2></summary>'
             + (f'<p class="sub">{esc(sub)}</p>' if sub else "") + f"{corpo}</details>")
 
 
@@ -1411,12 +1411,76 @@ linear-gradient(rgba(91,59,214,.05) 1px,transparent 1px),linear-gradient(90deg,r
 --tx:#ece8f8;--mut:#a79fc2;--ouro:#FFD23F;--roxo:#8B6CF4;--roxo2:#C4B5FD;--sep:#120d1c;--grade:rgba(167,139,250,.14)}
 @@ .rota{background:#0d0918}
 @@ #tip{background:#fff;box-shadow:0 10px 30px rgba(40,20,90,.28)}
-@@ dialog#editor,@@ dialog#detalhe{background:#fff;box-shadow:0 20px 60px rgba(40,20,90,.4)}
+@@ dialog#editor,@@ dialog#detalhe,@@ dialog#organizar{background:#fff;box-shadow:0 20px 60px rgba(40,20,90,.4)}
 @@ .ed-form input[type=text],@@ .ed-form input[type=date],@@ .ed-form input[type=number]{background:#fff}
 @@ .ed-btn.perigo,@@ .ed-erro{color:#b3265e}@@ .ed-btn.perigo{border-color:#b3265e}
 @@ .det-st{background:rgba(106,75,216,.06)}
 @@ i.quad,@@ i.z1,@@ i.z2,@@ i.z3,@@ i.z4{outline:1px solid rgba(0,0,0,.2)}
 @@ tr.z2 td:first-child{box-shadow:inset 4px 0 0 #B59F00}@@ i.z2{background:#B59F00}
+"""
+ORGANIZAR_CSS = """
+dialog#organizar{width:min(560px,94vw);max-height:90vh;padding:0;border:1px solid var(--roxo2);border-radius:20px;background:#150f26;color:var(--tx);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+dialog#organizar::backdrop{background:rgba(5,3,12,.75)}
+.org-lista{list-style:none;margin:8px 0 14px;padding:0;display:flex;flex-direction:column;gap:6px}
+.org-lin{display:grid;grid-template-columns:28px 1fr auto auto auto;gap:6px 8px;align-items:center;padding:7px 10px;border:1px solid var(--bd);border-radius:12px;background:rgba(139,92,246,.07)}
+.org-lin.arrastando{opacity:.45}.org-lin.oculto .org-n{color:var(--mut);text-decoration:line-through}
+.org-al{cursor:grab;color:var(--mut);font-size:1.1rem;text-align:center;user-select:none;touch-action:none}
+.org-n{font-size:.9rem;overflow-wrap:anywhere}
+.org-lin button{font:700 .85rem var(--mono);color:var(--tx);background:rgba(139,92,246,.14);border:1px solid var(--bd);border-radius:10px;min-width:36px;min-height:36px;cursor:pointer}
+.org-lin button:hover{border-color:var(--roxo2)}.org-lin button:disabled{opacity:.3;cursor:default}
+.org-lin label{display:flex;gap:5px;align-items:center;font-size:.78rem;color:var(--mut);cursor:pointer}
+[data-mov][hidden]{display:none!important}
+@media(max-width:560px){.org-lin{grid-template-columns:24px 1fr auto auto}.org-lin label{grid-column:2/-1}}
+@media print{dialog#organizar{display:none!important}}
+"""
+ORGANIZAR_JS = """
+(function(){
+var KEY='painel-ordem',main=document.querySelector('main'),btn=document.getElementById('btn-organizar'),dlg=document.getElementById('organizar'),
+    ul=document.getElementById('org-lista'),aviso=document.getElementById('org-aviso');
+if(!main||!btn||!dlg)return;
+var unid=Array.prototype.slice.call(main.querySelectorAll(':scope > [data-mov]'));
+if(!unid.length){btn.hidden=true;return;}
+var padrao=unid.map(function(u){return u.getAttribute('data-mov');}),ref=unid[unid.length-1].nextSibling;
+var ordem=padrao.slice(),ocultos=[];
+function nomeDe(u){return u.getAttribute('data-mov');}
+function porNome(n){for(var i=0;i<unid.length;i++)if(nomeDe(unid[i])===n)return unid[i];return null;}
+function ler(){try{var v=JSON.parse(localStorage.getItem(KEY)||'null');return v&&Array.isArray(v.ordem)?v:null;}catch(e){return null;}}
+function gravar(){try{if(ordem.join('\\n')===padrao.join('\\n')&&!ocultos.length)localStorage.removeItem(KEY);
+  else localStorage.setItem(KEY,JSON.stringify({ordem:ordem,ocultos:ocultos}));}catch(e){}}
+function aplicar(){ordem.forEach(function(n){var u=porNome(n);if(u){main.insertBefore(u,ref);u.hidden=ocultos.indexOf(n)>=0;}});}
+function mesclar(salva){var r=salva.ordem.filter(function(n){return padrao.indexOf(n)>=0;}).filter(function(n,i,a){return a.indexOf(n)===i;});
+  padrao.forEach(function(n,i){if(r.indexOf(n)<0){var ant=i>0?r.indexOf(padrao[i-1]):-1;r.splice(ant+1,0,n);}});
+  return r;}
+var s=ler();if(s){ordem=mesclar(s);ocultos=(s.ocultos||[]).filter(function(n){return padrao.indexOf(n)>=0;});}
+aplicar();
+function dizer(m){aviso.textContent=m;}
+function linha(n){var li=document.createElement('li');li.className='org-lin';li.setAttribute('data-nome',n);li.draggable=true;
+  li.innerHTML='<span class="org-al" aria-hidden="true">⠿</span><span class="org-n"></span><button type="button" class="sobe" aria-label="Subir"></button><button type="button" class="desce" aria-label="Descer"></button><label><input type="checkbox" class="mostra"> mostrar</label>';
+  li.querySelector('.org-n').textContent=n;li.querySelector('.sobe').textContent='▲';li.querySelector('.desce').textContent='▼';return li;}
+function estado(){var ls=ul.children;Array.prototype.forEach.call(ls,function(li,i){var n=li.getAttribute('data-nome');
+  li.querySelector('.sobe').disabled=i===0;li.querySelector('.desce').disabled=i===ls.length-1;
+  var c=li.querySelector('.mostra');c.checked=ocultos.indexOf(n)<0;c.setAttribute('aria-label','Mostrar '+n);li.classList.toggle('oculto',!c.checked);
+  li.querySelector('.sobe').setAttribute('aria-label','Subir '+n);li.querySelector('.desce').setAttribute('aria-label','Descer '+n);});}
+function sincronizar(){ordem=Array.prototype.map.call(ul.children,function(li){return li.getAttribute('data-nome');});aplicar();gravar();estado();}
+function montar(){ul.textContent='';ordem.forEach(function(n){ul.appendChild(linha(n));});estado();}
+function mover(li,delta,foco){var alvo=delta<0?li.previousElementSibling:li.nextElementSibling;if(!alvo)return;
+  if(delta<0)ul.insertBefore(li,alvo);else ul.insertBefore(alvo,li);sincronizar();
+  var b=li.querySelector(delta<0?'.sobe':'.desce');if(b.disabled)b=li.querySelector(delta<0?'.desce':'.sobe');if(foco)b.focus();
+  dizer(li.getAttribute('data-nome')+': posição '+(Array.prototype.indexOf.call(ul.children,li)+1)+' de '+ul.children.length);}
+ul.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var li=b.closest('.org-lin');
+  if(b.classList.contains('sobe'))mover(li,-1,true);else if(b.classList.contains('desce'))mover(li,1,true);});
+ul.addEventListener('change',function(e){if(!e.target.classList.contains('mostra'))return;var n=e.target.closest('.org-lin').getAttribute('data-nome');
+  var i=ocultos.indexOf(n);if(e.target.checked){if(i>=0)ocultos.splice(i,1);}else if(i<0)ocultos.push(n);aplicar();gravar();estado();
+  dizer(n+(e.target.checked?': visível':': escondido'));});
+var arrasta=null;
+ul.addEventListener('dragstart',function(e){arrasta=e.target.closest('.org-lin');if(arrasta){arrasta.classList.add('arrastando');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',arrasta.getAttribute('data-nome'));}catch(x){}}});
+ul.addEventListener('dragover',function(e){if(!arrasta)return;e.preventDefault();var alvo=e.target.closest('.org-lin');if(!alvo||alvo===arrasta)return;
+  var r=alvo.getBoundingClientRect(),depois=e.clientY>r.top+r.height/2;ul.insertBefore(arrasta,depois?alvo.nextSibling:alvo);});
+ul.addEventListener('dragend',function(){if(arrasta){arrasta.classList.remove('arrastando');arrasta=null;sincronizar();}});
+document.getElementById('org-restaurar').addEventListener('click',function(){ordem=padrao.slice();ocultos=[];aplicar();gravar();montar();dizer('Ordem original restaurada.');});
+document.getElementById('org-fechar').addEventListener('click',function(){dlg.close();});
+btn.addEventListener('click',function(){montar();dizer('');dlg.showModal();});
+})();
 """
 TEMA_HEAD_JS = "try{if(localStorage.getItem('painel-tema')==='claro')document.documentElement.setAttribute('data-tema','claro');}catch(e){}"
 TEMA_JS = """
@@ -1713,7 +1777,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
                  if p.get("atv") and p["atv"].get("id") is not None}
     secao_r, hero_xy, templates, minis = secao_rotas(rotas, ids_prova)
     if corredor and (corredor["proximas"] or corredor["feitas"]):
-        blocos.append(provas_html(corredor, minis))
+        blocos.append(f'<div class="mov-prov" data-mov="Provas">{provas_html(corredor, minis)}</div>')
     if secao_r:
         blocos.append(secao_r)
     if plano_info and plano_info.get("ciclos"):
@@ -1839,16 +1903,21 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Painel Garmin</title><style>{CSS}{PLANO_CSS}{TEMA_CLARO.replace('@@', 'html[data-tema=claro]')}{regras}</style><script>{TEMA_HEAD_JS}</script></head>
+<title>Painel Garmin</title><style>{CSS}{PLANO_CSS}{ORGANIZAR_CSS}{TEMA_CLARO.replace('@@', 'html[data-tema=claro]')}{regras}</style><script>{TEMA_HEAD_JS}</script></head>
 <body data-n="{padrao}" data-hoje="{hoje.isoformat()}" data-gerado="{agora.strftime('%Y-%m-%dT%H:%M:%S')}"><main>
 {cabecalho}
 
 {faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
-<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-tema" class="btn-editar" aria-pressed="false">☀ Tema claro</button><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
+<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-organizar" class="btn-editar">⇅ Organizar</button><button type="button" id="btn-tema" class="btn-editar" aria-pressed="false">☀ Tema claro</button><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
 <div class="faixa" id="atu-status" role="status" hidden><b>Atualização</b><span></span><button type="button" class="ed-btn" id="atu-fechar" hidden>Fechar</button></div>
 <dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>
+<dialog id="organizar" aria-labelledby="org-t"><div class="ed-box"><div class="ed-top"><h2 id="org-t">Organizar o painel</h2>
+<button type="button" class="ed-btn" id="org-fechar">Fechar</button></div>
+<p class="sub">Use ▲ e ▼ (ou arraste pelo ⠿) para mudar a ordem. Desmarque “mostrar” para esconder um bloco. A página muda na hora e o painel lembra a sua escolha neste navegador.</p>
+<ul id="org-lista" class="org-lista"></ul><div class="legrow"><button type="button" class="ed-btn" id="org-restaurar">Restaurar ordem original</button>
+<span id="org-aviso" class="mut" role="status" aria-live="polite"></span></div></div></dialog>
 {"".join(blocos)}
 
 {secao_tabela("Semanas — corridas (segunda a domingo)", t_sem)}
@@ -1864,4 +1933,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script><script>{TEMA_JS}</script></body></html>""", omitidos
+</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script><script>{TEMA_JS}</script><script>{ORGANIZAR_JS}</script></body></html>""", omitidos
