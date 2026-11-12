@@ -34,6 +34,9 @@ MODELO_PROVAS = """# Uma prova por linha:  data; nome; distância em km; arquivo
 # Exemplos (apague e coloque as suas):
 # 2026-10-18; 10K Noturna; 10; 10k-noturna.png
 # 06/12/2026; Corrida de Fim de Ano; 10;
+# Para só colocar logo numa prova que a Garmin já mostra (competição marcada), use * no
+# lugar do nome: o painel usa o nome da atividade da Garmin.
+# 19/07/2026; *; 7; logo.png
 """
 
 
@@ -186,11 +189,15 @@ def montar(pasta, historico, hoje, cobertura_ini=None):
     usadas, proximas, feitas = set(), [], []
     for p in provas:
         if p["data"] > hoje:
+            if p["nome"] == "*":
+                p = {**p, "nome": "Prova"}
             proximas.append({**p, "dias": (p["data"] - hoje).days})
         else:
             a = atividade_da_prova(p, historico, usadas)
             if a:
                 usadas.add(a.get("id"))
+            if p["nome"] == "*":      # "*" = usar o nome da atividade na Garmin
+                p = {**p, "nome": (a or {}).get("nome") or "Prova"}
             feitas.append({**p, "atv": a, "origem": "lista"})
     # corridas marcadas como competição na Garmin e que não estão na sua lista
     for a in historico:

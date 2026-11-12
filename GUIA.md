@@ -98,7 +98,9 @@ Edite os dois `.txt` no Bloco de Notas e salve; depois rode `redesenhar.bat`. De
   informou, até 20% de diferença). Sem atividade parecida, aparece "sem dado". O painel não
   prevê tempos de prova.
 - Corridas marcadas como **competição** na Garmin e que não estão no `provas.txt` aparecem
-  sozinhas como "COMPETIÇÃO".
+  sozinhas como "COMPETIÇÃO", sem logo. Para colocar o logo, cadastre-a no `provas.txt` com a
+  mesma data e use `*` no lugar do nome (ex.: `19/07/2026; *; 7; logo.png`): o painel mantém o
+  nome da atividade da Garmin.
 - Sem logo, o painel desenha um selo com as iniciais da prova.
 - Imagens: png, jpg, webp, gif ou svg, até 2,5 MB, **só o nome do arquivo** (sem pastas). Ficam
   embutidas no `painel.html`, só no seu computador.

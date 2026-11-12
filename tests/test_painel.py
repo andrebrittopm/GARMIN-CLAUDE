@@ -384,6 +384,12 @@ linha ruim
     assert corredor.imagem_uri(os.path.join(pasta_, "imagens"), "C:\\x.png", av, "t") is None
     open(os.path.join(pasta_, "imagens", "grande.png"), "wb").write(png() + b"0" * 2_600_000)
     assert corredor.imagem_uri(os.path.join(pasta_, "imagens"), "grande.png", av, "t") is None and any("reduza" in x for x in av)
+    # "*" no nome: mantém o nome da atividade na Garmin e só acrescenta o logo
+    open(os.path.join(pasta_, "provas.txt"), "w", encoding="utf-8").write(f"{d(13).isoformat()}; *; 10; logo5k.png\n")
+    co_ = corredor.montar(pasta_, gp.montar_atividades(armazem.todas_atividades(armazem.carregar(cam))), HOJE)
+    cartao_ = next(p for p in co_["feitas"] if p["data"] == d(13))
+    assert cartao_["origem"] == "lista" and cartao_["logo_uri"] and cartao_["nome"] == "Treino <running>", cartao_["nome"]
+    assert sum(1 for p in co_["feitas"] if p["data"] == d(13)) == 1, "não duplica com a competição marcada na Garmin"
     # sem perfil.txt e sem provas.txt: o painel volta ao cabeçalho clássico
     os.remove(os.path.join(pasta_, "perfil.txt")); os.remove(os.path.join(pasta_, "provas.txt"))
     rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0 and 'class="hero"' not in painel() and 'class="top"' in painel()
