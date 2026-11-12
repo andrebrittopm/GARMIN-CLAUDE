@@ -11,6 +11,7 @@ import sys
 
 NOME_CHAVE = "garmin-personal-api-key"
 NOME_TOKEN = "garmin-personal-api-token"
+NOME_INTERVALS = "intervals-icu-api-key"      # chave do intervals.icu (opcional, só leitura)
 
 
 class ErroCofre(Exception):
@@ -71,7 +72,7 @@ def _ler_win(nome, codificacao="utf-16-le"):
         adv.CredFree(ptr)
 
 
-def _gravar_win(nome, valor, codificacao="utf-16-le"):
+def _gravar_win(nome, valor, codificacao="utf-16-le", usuario="garmin"):
     ctypes, adv, CREDENTIAL = _win()
     dados = valor.encode(codificacao)
     if len(dados) > LIMITE_SEGREDO:
@@ -80,7 +81,7 @@ def _gravar_win(nome, valor, codificacao="utf-16-le"):
     c = CREDENTIAL()
     c.Type = 1
     c.TargetName = nome
-    c.UserName = "garmin"
+    c.UserName = usuario
     c.CredentialBlobSize = len(dados)
     c.CredentialBlob = ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte))
     c.Persist = 2
@@ -131,3 +132,46 @@ def apagar_token_cache():
         return _apagar_win(NOME_TOKEN) if sys.platform == "win32" else False
     except Exception:
         return False
+
+
+# ------------------------------------------------- chave do intervals.icu ---
+def ler_chave_intervals():
+    """Chave do intervals.icu ou None se não foi guardada. Nunca imprime."""
+    try:
+        return (_ler_win(NOME_INTERVALS) or None) if sys.platform == "win32" else None
+    except Exception:
+        return None
+
+
+def gravar_chave_intervals(valor):
+    if sys.platform != "win32":
+        raise ErroCofre("Guardar a chave do intervals.icu só está pronto para o Windows.")
+    if not _gravar_win(NOME_INTERVALS, valor, "utf-16-le", "intervals"):
+        raise ErroCofre("O Windows não aceitou guardar a chave.")
+
+
+def apagar_chave_intervals():
+    try:
+        return _apagar_win(NOME_INTERVALS) if sys.platform == "win32" else False
+    except Exception:
+        return False
+
+
+def ler_area_de_transferencia():
+    """Texto copiado (Windows). Usado só para guardar a chave sem você precisar colá-la em lugar nenhum."""
+    if sys.platform != "win32":
+        raise ErroCofre("Ler a área de transferência só está pronto para o Windows.")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
+                           capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        raise ErroCofre("Não consegui ler a área de transferência.") from None
+    return r.stdout.decode("utf-8", "replace").strip()
+
+
+def limpar_area_de_transferencia():
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value ' '"],
+                       capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        pass

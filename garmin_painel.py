@@ -46,6 +46,7 @@ import atualizador  # noqa: E402
 import configuracao  # noqa: E402
 import corredor  # noqa: E402
 import diagnostico  # noqa: E402
+import intervals  # noqa: E402
 import metas  # noqa: E402
 import notificacao  # noqa: E402
 import plano  # noqa: E402
@@ -591,6 +592,7 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
                            historico=historico, metas=metas.progresso(pasta, historico, hoje),
                            cobertura_ini=dados.get("cobertura_ini"), corredor=co,
                            plano_info=montar_plano(pasta, historico, hoje),
+                           calendario=intervals.proximos(pasta, hoje),
                            rotas=preparar_rotas(pasta, historico) if os.path.exists(rotas.caminho_rotas(pasta)) else None)
     caminho = os.path.join(pasta, "painel.html")
     tmp = caminho + ".tmp"            # grava inteiro e só então troca: nunca fica pela metade
@@ -628,6 +630,7 @@ def executar_atualizacao(dias=30, abrir=False, historico=None, rotas_todas=False
         busca_ini = min(ini, hoje - dt.timedelta(days=max(1, min(historico, 3650)) - 1))
     avisos = atualizar_armazem(cli, dados, hoje, busca_ini)
     avisos += atualizar_rotas(cli, dados, 100000 if rotas_todas else rotas.POR_EXECUCAO, rotas_todas)
+    avisos += atualizar_intervals(pasta_dados(), hoje, dt.datetime.now())
     gerar(dados, hoje, ini, dt.datetime.now(), avisos, abrir)
     return avisos
 
@@ -701,6 +704,54 @@ def redesenhar(dias=30, abrir=False):
     return avisos
 
 
+def guardar_chave_intervals():
+    """Guarda no cofre a chave que está na área de transferência. A chave nunca é impressa."""
+    from cofre import (gravar_chave_intervals, ler_area_de_transferencia,
+                       limpar_area_de_transferencia)
+    k = ler_area_de_transferencia()
+    if not k or len(k) < 10 or len(k) > 200 or any(c.isspace() for c in k) or not k.isprintable():
+        raise Erro("O que está copiado não parece uma chave do intervals.icu. Copie a chave de API "
+                   "(Settings > Developer Settings > API Key) e rode o comando de novo.")
+    gravar_chave_intervals(k)
+    limpar_area_de_transferencia()
+    print(f"OK: chave do intervals.icu guardada no cofre ({len(k)} caracteres). "
+          "A área de transferência foi limpa. Próximo passo: py garmin_painel.py --testar-intervals")
+    return 0
+
+
+def testar_intervals():
+    from cofre import ler_chave_intervals
+    chave = ler_chave_intervals()
+    if not chave:
+        raise Erro("Não achei a chave do intervals.icu no cofre. Rode: py garmin_painel.py --guardar-chave-intervals")
+    hoje = dt.date.today()
+    try:
+        ev = intervals.normalizar(intervals.buscar(chave, intervals.atleta(pasta_dados()), hoje,
+                                                   hoje + dt.timedelta(days=intervals.DIAS_ADIANTE)))
+    except intervals.ErroIntervals as e:
+        raise Erro(str(e)) from None
+    print(f"Conexão com o intervals.icu funcionando (só leitura). Eventos nos próximos "
+          f"{intervals.DIAS_ADIANTE} dias: {len(ev)}.")
+    for e in ev[:5]:
+        print(f"  {e['data']}  {e['categoria']}: {e['nome']}")
+    return 0
+
+
+def atualizar_intervals(pasta, hoje, agora):
+    """Busca o calendário se a chave do intervals.icu foi guardada. Sem chave: não faz nada.
+    Falha: só avisa (o que já estava guardado continua)."""
+    from cofre import ler_chave_intervals
+    chave = ler_chave_intervals()
+    if not chave:
+        return []
+    try:
+        n = intervals.atualizar(pasta, chave, hoje, agora)
+        print(f"intervals.icu: {n} evento(s) guardados.")
+        return []
+    except intervals.ErroIntervals as e:
+        return [f"intervals.icu: {e} Mostrando o que estava guardado."]
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Painel pessoal Garmin")
     p.add_argument("--teste", action="store_true",
@@ -727,6 +778,15 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--guardar-chave-intervals", action="store_true",
+                   help="guarda no cofre do Windows a chave do intervals.icu que você COPIOU (Ctrl+C); "
+                        "ela não é mostrada nem digitada")
+    p.add_argument("--testar-intervals", action="store_true",
+                   help="testa a conexão com o intervals.icu (só leitura) e mostra quantos eventos vieram")
+    p.add_argument("--esquecer-intervals", action="store_true",
+                   help="apaga do cofre a chave do intervals.icu e o calendário guardado")
+    p.add_argument("--intervals-atleta", metavar="NUMERO",
+                   help="número do atleta no intervals.icu (ex.: i12345); padrão: o dono da chave")
     p.add_argument("--atualizar-programa", action="store_true",
                    help="atualiza os arquivos do PROGRAMA a partir do GitHub (seus dados não são tocados)")
     p.add_argument("--simular", action="store_true", help="com --atualizar-programa: só mostra o que mudaria")
@@ -798,6 +858,26 @@ def main(argv=None):
             feitos = corredor.criar_modelos(pasta_dados())
             print("Criados: " + (", ".join(feitos) if feitos else "nada novo (já existiam)")
                   + f"\nPasta: {pasta_dados()}\nColoque sua foto em imagens\\ e os logos em imagens\\corridas\\.")
+            return 0
+        if a.guardar_chave_intervals:
+            return guardar_chave_intervals()
+        if a.intervals_atleta:
+            try:
+                n = intervals.definir_atleta(pasta_dados(), a.intervals_atleta)
+            except ValueError as e:
+                raise Erro(str(e)) from None
+            print(f"Atleta do intervals.icu definido: {n}.")
+            return 0
+        if a.testar_intervals:
+            return testar_intervals()
+        if a.esquecer_intervals:
+            from cofre import apagar_chave_intervals
+            apagar_chave_intervals()
+            try:
+                os.remove(intervals.caminho(pasta_dados()))
+            except OSError:
+                pass
+            print("Chave do intervals.icu e calendário guardado apagados (se existiam).")
             return 0
         if a.esquecer_token:
             apagar_token_cache()

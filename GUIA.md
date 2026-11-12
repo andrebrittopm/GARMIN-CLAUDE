@@ -40,6 +40,7 @@ diagnóstico e sem conselho de treino.
 | `rotas.json` | Trilhas de GPS simplificadas (**dados de localização**, só neste computador) | Não |
 | `perfil.txt`, `provas.txt`, `imagens\\` | Seu nome, suas provas, foto e logos | **Sim** |
 | `plano.json`, `plano.py` | Sua meta, ciclos e selos (opcional) e as contas do plano de prova | **Sim** (o .json) |
+| `intervals.py`, `intervals.json` | Calendário do intervals.icu (opcional, só leitura; a chave fica no cofre) | Não |
 | `dados_brutos.json` | Seus dados guardados (**dados de saúde**, sem chave) | Não |
 | `backups/` | Até 5 cópias diárias do arquivo acima | Só para restaurar |
 | `ultimo_log.txt` | O que a última atualização automática fez | Para olhar |
@@ -194,6 +195,23 @@ Formato do `plano.json` (campos que faltarem ou estiverem errados são ignorados
 ```
 `altitude_km` tem um valor por km, de 0 até a distância da prova (11 valores para 10 km). O arquivo fica
 só no seu computador (não vai para o GitHub).
+
+### Próximos dias do intervals.icu (opcional)
+Mostra o que está marcado no seu calendário do intervals.icu nos próximos 14 dias (treinos, anotações, plantões).
+**Só leitura**: o painel faz um único tipo de pedido (GET dos eventos) e nunca cria, altera ou apaga nada lá.
+Guarda só nome, tipo, duração e distância; **as descrições dos treinos não são guardadas**.
+
+1. No intervals.icu: **Settings > Developer Settings > API Key**. Crie/copie a chave (Ctrl+C). Não cole em conversa.
+2. Com a chave **copiada**, no PowerShell, na pasta do painel:
+   `py garmin_painel.py --guardar-chave-intervals`
+   Deve aparecer `OK: chave do intervals.icu guardada`. A chave vai para o Gerenciador de Credenciais
+   (nome `intervals-icu-api-key`) e a área de transferência é limpa. Ela não é mostrada nem salva em arquivo.
+3. Teste: `py garmin_painel.py --testar-intervals` (mostra quantos eventos vieram). Se der "não achou esse atleta",
+   use o número que aparece no seu perfil do intervals.icu: `py garmin_painel.py --intervals-atleta i12345`.
+4. Pronto: a cada atualização o calendário é buscado junto. Se falhar, o painel mostra o último que guardou e avisa.
+
+Para desligar e apagar tudo: `py garmin_painel.py --esquecer-intervals`. Arquivos: `intervals.py` (programa) e
+`intervals.json` (calendário guardado, só neste computador, fora do GitHub).
 
 ### Rotas e percursos (opcional)
 

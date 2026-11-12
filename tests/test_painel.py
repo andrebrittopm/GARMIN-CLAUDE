@@ -216,7 +216,7 @@ if __name__ == "__main__":
     import cofre, ctypes
     _, _, CRED = cofre._estruturas()
     assert ctypes.sizeof(CRED) == 80 and CRED.CredentialBlob.offset == 40 and CRED.UserName.offset == 72
-    assert cofre._gravar_win.__defaults__ == ("utf-16-le",) and cofre.LIMITE_SEGREDO == 2560
+    assert cofre._gravar_win.__defaults__ == ("utf-16-le", "garmin") and cofre.LIMITE_SEGREDO == 2560
 
     # 14) --pasta-dados: arquivos vão para onde o usuário escolher
     import tempfile

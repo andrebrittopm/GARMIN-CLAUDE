@@ -1064,11 +1064,53 @@ def card_plano_prova(pl):
                   f'<div class="legrow pl-dist">{"".join(dist_btn)}</div>{"".join(blocos)}{nota}')
 
 
+def card_calendario(cal, hoje, dias=14):
+    """Próximos dias do calendário do intervals.icu: o que está marcado, sem comentário."""
+    eventos, buscado = cal
+    por_dia = {}
+    for e in eventos:
+        por_dia.setdefault(e["data"], []).append(e)
+    try:
+        q = dt.datetime.fromisoformat(buscado)
+        quando = f"atualizado em {q.strftime('%d/%m %H:%M')}"
+        velho = (dt.datetime.now() - q).total_seconds() > 48 * 3600
+    except (TypeError, ValueError):
+        quando, velho = "data da busca desconhecida", False
+    linhas = []
+    for i in range(dias):
+        d = hoje + dt.timedelta(days=i)
+        evs = por_dia.get(d.isoformat(), [])
+        itens = []
+        for e in evs:
+            det = []
+            if e.get("dur_s"):
+                det.append(minutos(e["dur_s"]))
+            if e.get("dist_m"):
+                det.append(km(e["dist_m"]))
+            itens.append(f'<li><span class="cal-c">{esc(e["categoria"])}</span><b>{esc(e["nome"])}</b>'
+                         + (f'<span class="mut">{esc(" · ".join(det))}</span>' if det else "") + "</li>")
+        corpo = f'<ul class="cal-i">{"".join(itens)}</ul>' if itens else '<span class="mut">nada marcado</span>'
+        linhas.append(f'<div class="cal-l{" hoje" if i == 0 else ""}"><div class="cal-d">{esc(data_br(d.isoformat()))}'
+                      f'{"<small>hoje</small>" if i == 0 else ""}</div>{corpo}</div>')
+    aviso = ('<p class="nota" style="margin:6px 0 0">Estes dados têm mais de 2 dias; a última busca pode ter falhado.</p>'
+             if velho else "")
+    return cartao("Próximos dias", f"calendário do intervals.icu · {quando}",
+                  f'<div class="cal">{"".join(linhas)}</div>{aviso}'
+                  '<p class="sub">Só o que está marcado no seu calendário do intervals.icu (leitura; o painel nunca altera nada lá).</p>')
+
+
 PLANO_CSS = """
 .rumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 28px;margin-bottom:10px}
 .rumo .r{display:block;color:var(--mut);font-size:.74rem;text-transform:uppercase;letter-spacing:.07em}
 .rumo .v{display:block;font:700 2.1rem/1.15 var(--mono);color:var(--roxo2)}
 .rumo .v small{font-size:1rem;color:var(--mut)}
+.cal-l{display:grid;grid-template-columns:120px 1fr;gap:4px 14px;padding:8px 0;border-bottom:1px solid var(--bd)}
+.cal-l:last-child{border-bottom:0}.cal-d{font:700 .85rem var(--mono)}.cal-d small{display:block;color:var(--ouro);font-weight:400}
+.cal-l.hoje{background:rgba(139,92,246,.08);border-radius:10px;padding-left:8px}
+.cal-i{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.cal-i li{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+.cal-c{font:700 .68rem var(--mono);color:var(--roxo2);text-transform:uppercase;border:1px solid var(--bd);border-radius:999px;padding:1px 8px}
+@media(max-width:560px){.cal-l{grid-template-columns:1fr}}
 .rumo-txt{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 16px;font-size:.82rem}
 .ciclos{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:8px;margin-top:6px}
 .ci{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px 5px;border-radius:10px;
@@ -1569,7 +1611,7 @@ document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' '
 
 def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
            historico=None, metas=None, cobertura_ini=None, corredor=None, rotas=None,
-           plano_info=None):
+           plano_info=None, calendario=None):
     """Devolve (html, nomes_dos_gráficos_omitidos).
 
     alertas: faixas de destaque no topo (ex.: chave perto de vencer).
@@ -1578,6 +1620,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     metas: lista de metas do usuário com o progresso (ver metas.progresso).
     cobertura_ini: data (texto ISO) em que começam os dados guardados.
     corredor: perfil, provas e soma do período (ver corredor.montar), ou None.
+    calendario: (eventos, buscado_em) do intervals.icu (intervals.proximos), ou None.
     plano_info: {rumo, ciclos, selos, plano, ref_pace} calculado de plano.json, ou None."""
     hoje = fim
     sem0 = segunda(hoje)
@@ -1600,6 +1643,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
         blocos.append(cartao("Suas metas", "progresso até hoje", card_metas(metas)))
     if plano_info and plano_info.get("rumo"):
         blocos.append(card_rumo(plano_info["rumo"]))
+    if calendario is not None:
+        blocos.append(card_calendario(calendario, hoje))
     blocos.append(cartao("Esta semana × semana passada × média",
                          "corridas · números da Garmin",
                          card_comparacao(comparar_semanas(atividades, hoje, ini))))

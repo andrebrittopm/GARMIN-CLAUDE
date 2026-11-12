@@ -149,6 +149,20 @@ def executar():
         except OSError:
             atencao("Não consegui ler o ultimo_log.txt.")
 
+    # --- intervals.icu (opcional)
+    import cofre
+    import intervals
+    if not cofre.ler_chave_intervals():
+        ok("intervals.icu: não configurado (opcional; veja o GUIA.md)")
+    else:
+        cal = intervals.carregar(pasta)
+        if not cal:
+            atencao("intervals.icu: chave guardada, mas o calendário ainda não foi buscado. Rode a atualização.")
+        else:
+            idade = time.time() - os.path.getmtime(intervals.caminho(pasta))
+            (atencao if idade > 48 * 3600 else ok)(
+                f"intervals.icu: {len(cal['eventos'])} evento(s) guardados, atualizados há {_idade(idade)}")
+
     # --- biblioteca oficial da Garmin para rotas (opcional)
     import rotas
     if rotas.carregar_sdk() is None:
