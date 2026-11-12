@@ -51,6 +51,7 @@ def ativ_json(i, n, t, dist, dur):
          "activityName": f"Treino <{t}>", "activityType": {"typeKey": t}, "duration": float(dur),
          "averageHR": 150 + i, "elevationGain": 20.0 + i}
     if i == 13: r["eventType"] = {"typeId": 1, "typeKey": "race"}
+    if "running" in t: r["hasPolyline"] = True
     if dist: r.update(distance=float(dist), averageSpeed=dist / dur)
     if "running" in t:
         r.update(averageRunningCadenceInStepsPerMinute=170.0 + n, vO2MaxValue=50.0 + i % 3,
@@ -58,12 +59,15 @@ def ativ_json(i, n, t, dist, dur):
                  **{f"fastestSplit_{m}": dur / dist * m * 0.95 for m in (1000, 1609, 5000, 10000, 21098) if dist >= m})
     return r
 
-class Estado: hrv_falha = False
+class Estado: hrv_falha = False; zip_fit = None
+DOWNLOADS = []
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def _json(self, o, code=200):
         b = json.dumps(o).encode(); self.send_response(code)
         self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(b)
+    def _bytes(self, b, tipo="application/zip"):
+        self.send_response(200); self.send_header("Content-Type", tipo); self.end_headers(); self.wfile.write(b)
     def do_POST(self):
         METODOS.append(("POST", self.path))
         if self.headers.get("Authorization") != "ApiKey " + CHAVE_FALSA: return self._json({}, 401)
@@ -72,6 +76,9 @@ class H(BaseHTTPRequestHandler):
         METODOS.append(("GET", self.path))
         if self.headers.get("Authorization") != "Bearer " + TOKEN_FALSO: return self._json({}, 401)
         u = urllib.parse.urlparse(self.path); q = dict(urllib.parse.parse_qsl(u.query)); p = u.path
+        if "/download-service/files/activity/" in p:
+            DOWNLOADS.append(p)
+            return self._bytes(Estado.zip_fit if Estado.zip_fit is not None else b"")
         if "userprofile/settings" in p: return self._json({"x": 1})
         if "/weight-service/weight/all/" in p:
             a, b = p.rsplit("/", 2)[-2:]
@@ -396,6 +403,50 @@ linha ruim
     open(os.path.join(pasta_, "perfil.txt"), "w", encoding="utf-8").write("nome: Corredor Teste\nfoto: foto.png\n")
     open(os.path.join(pasta_, "provas.txt"), "w", encoding="utf-8").write(f"{d(8).isoformat()}; 5K Teste; 5; logo5k.png\n{fut}; Futura Corrida; 10;\n")
     rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0
+
+    # 23) rotas: arquivo FIT lido com a biblioteca OFICIAL da Garmin (pulado se não instalada)
+    import rotas, io, zipfile, re
+    if rotas.carregar_sdk() is None:
+        print("PULADO (23): garmin-fit-sdk não instalada. Instale: " + rotas.INSTALAR)
+    else:
+        import fit_falso
+        fit_bytes, esp = fit_falso.criar()
+        buf_ = io.BytesIO()
+        with zipfile.ZipFile(buf_, "w") as z_: z_.writestr("12345_ACTIVITY.fit", fit_bytes)
+        Estado.zip_fit = buf_.getvalue()
+        rc, out = rodar(["--sem-abrir"]); assert rc == 0, out         # garante dados no armazém
+        DOWNLOADS.clear(); METODOS.clear()
+        rc, out = rodar(["--teste-rota"]); print(out); assert rc == 0, out
+        assert len(DOWNLOADS) == 1 and all(m == "GET" or p.endswith("/token") for m, p in METODOS), "1 download, só leitura"
+        assert f"com GPS: {esp['com_gps']} (96%)" in out and f"Registros no arquivo: {esp['registros']}" in out
+        comp = float(re.search(r"Comprimento da trilha: ([\d,]+) km", out).group(1).replace(",", "."))
+        assert abs(comp * 1000 - esp["comprimento_m"]) / esp["comprimento_m"] < 0.02, comp
+        assert "Trilha simplificada: 300 pontos" in out and "Esporte registrado no arquivo: running" in out
+        assert not re.search(r"-?\d{2}[.,]\d{4,}", out), "nenhuma coordenada na saída"
+        assert CHAVE_FALSA not in out and TOKEN_FALSO not in out
+        rc, out = rodar(["--teste-rota", "--data", "1999-01-01"]); assert rc == 1 and "Não achei uma corrida" in out
+        # ZIP sem FIT / bytes que não são FIT / resposta vazia
+        buf_ = io.BytesIO()
+        with zipfile.ZipFile(buf_, "w") as z_: z_.writestr("leia-me.txt", "oi")
+        Estado.zip_fit = buf_.getvalue(); rc, out = rodar(["--teste-rota"]); assert rc == 1 and "não contém um arquivo .fit" in out, out
+        buf_ = io.BytesIO()
+        with zipfile.ZipFile(buf_, "w") as z_: z_.writestr("x.fit", b"isto nao e um fit de verdade")
+        Estado.zip_fit = buf_.getvalue(); rc, out = rodar(["--teste-rota"]); assert rc == 1 and "FIT válido" in out, out
+        Estado.zip_fit = b""; rc, out = rodar(["--teste-rota"]); assert rc == 1, out
+        Estado.zip_fit = None
+        # biblioteca ausente: mensagem com a instrução de instalação
+        orig_sdk = rotas.carregar_sdk; rotas.carregar_sdk = lambda: None
+        rc, out = rodar(["--teste-rota"]); rotas.carregar_sdk = orig_sdk
+        assert rc == 1 and "pip install --require-hashes" in out, out
+        # trilha: simplificar mantém a forma; cortar pontas tira o começo e o fim (privacidade)
+        pts = rotas.pontos_gps(rotas.decodificar(fit_bytes))
+        simp = rotas.simplificar(pts)
+        assert len(simp) == 300 and simp[0] == pts[0] and simp[-1] == pts[-1]
+        assert abs(rotas.comprimento_m(simp) - rotas.comprimento_m(pts)) / rotas.comprimento_m(pts) < 0.02
+        cort = rotas.cortar_pontas(pts, 300)
+        assert abs((rotas.comprimento_m(pts) - rotas.comprimento_m(cort)) - 600) < 25, "tira ~300 m de cada ponta"
+        assert rotas.cortar_pontas(pts[:5], 300) == [], "rota curta demais some, nunca vaza"
+        assert rotas.pontos_gps({"record_mesgs": [{"position_lat": 0, "position_long": 0}, {"position_lat": 2**31 - 1, "position_long": 0}, {}]}) == [], "0,0 e lat inválida são descartados"
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)

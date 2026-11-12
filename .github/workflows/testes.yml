@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Biblioteca oficial da Garmin para arquivos FIT (versão e hash fixos)
+        run: python -m pip install --require-hashes --target libs -r requirements-fit.txt
       - name: Testes com servidor falso
         run: python tests/test_painel.py
 

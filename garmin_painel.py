@@ -22,6 +22,7 @@ Uso:
     python garmin_painel.py --chave-vence 2027-02-09   # avisa antes da chave vencer
     python garmin_painel.py --meta km-mes=50   # sua meta (veja --ajuda)
     python garmin_painel.py --historico 365    # busca mais histórico (recordes)
+    python garmin_painel.py --teste-rota       # confere se dá para ler a trilha de GPS
 """
 import argparse
 import base64
@@ -42,9 +43,10 @@ import configuracao  # noqa: E402
 import corredor  # noqa: E402
 import diagnostico  # noqa: E402
 import metas  # noqa: E402
+import rotas  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
                    ler_chave, ler_token_cache)
-from formatos import (MELHORES, SEM_DADO, hms, km, pace,  # noqa: E402
+from formatos import (MELHORES, SEM_DADO, hms, km, num, pace,  # noqa: E402
                       pace_de_velocidade, segunda)
 from visual import pagina  # noqa: E402
 
@@ -80,10 +82,13 @@ class Cliente:
         self._id = hashlib.sha256(chave.encode()).hexdigest()[:16]
         self._cache_tentado = False
 
-    def _abrir(self, req):
+    def _abrir(self, req, limite=None):
         try:
             with urllib.request.urlopen(req, timeout=40) as r:
-                return r.read()
+                dados = r.read(limite + 1) if limite else r.read()
+                if limite and len(dados) > limite:
+                    raise Erro("A resposta da Garmin é grande demais para ser lida.")
+                return dados
         except urllib.error.HTTPError as e:
             dica = {
                 400: "pedido inválido",
@@ -141,8 +146,8 @@ class Cliente:
         if exp and exp - time.time() > FOLGA_TOKEN_S:
             gravar_token_cache(f"{self._id}|{token}")
 
-    def get(self, caminho, params=None):
-        """GET autenticado. Devolve o JSON já convertido."""
+    def _requisitar(self, caminho, params=None, aceitar="application/json", limite=None):
+        """GET autenticado (só leitura). Devolve os bytes da resposta."""
         url = BASE + caminho
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -152,12 +157,12 @@ class Cliente:
             req = urllib.request.Request(
                 url, method="GET",
                 headers={"Authorization": "Bearer " + self._token,
-                         "Accept": "application/json", "User-Agent": UA})
+                         "Accept": aceitar, "User-Agent": UA})
             try:
-                corpo = self._abrir(req)
+                corpo = self._abrir(req, limite)
                 if sys.stdout.isatty():     # um ponto por pedido, para ver que está andando
                     print(".", end="", flush=True)
-                return json.loads(corpo) if corpo.strip() else None
+                return corpo
             except Erro as e:
                 msg = str(e)
                 if "401" in msg and tentativa == 0:
@@ -170,6 +175,16 @@ class Cliente:
                     continue
                 raise
         raise Erro("Não consegui concluir o pedido.")
+
+    def get(self, caminho, params=None):
+        """GET autenticado. Devolve o JSON já convertido."""
+        corpo = self._requisitar(caminho, params)
+        return json.loads(corpo) if corpo.strip() else None
+
+    def get_bytes(self, caminho, limite):
+        """GET de um arquivo (ex.: o ZIP com o FIT de uma atividade)."""
+        return self._requisitar(caminho, aceitar="application/zip, application/octet-stream, */*",
+                                limite=limite)
 
 
 def TOKEN_URL():
@@ -393,6 +408,58 @@ def pasta_dados():
     return p
 
 
+def escolher_para_rota(dados, data=None):
+    """Corrida mais recente (com trilha de GPS, se a Garmin indicar) no armazém."""
+    corridas = [a for a in dados["atividades"].values()
+                if "running" in (g(a, "activityType", "typeKey") or "")]
+    if data:
+        corridas = [a for a in corridas if (a.get("startTimeLocal") or "")[:10] == data]
+    corridas.sort(key=lambda a: a.get("startTimeLocal") or "", reverse=True)
+    com_gps = [a for a in corridas if a.get("hasPolyline")]
+    return (com_gps or corridas or [None])[0]
+
+
+def modo_teste_rota(cli, data=None):
+    """Baixa o FIT de UMA corrida (só leitura), lê com a biblioteca oficial e
+    mostra fatos sobre ele. Não mostra coordenadas nem guarda o arquivo."""
+    dados = armazem.carregar(caminho_armazem())
+    a = escolher_para_rota(dados, data)
+    if a is None:
+        raise Erro("Não achei uma corrida nos dados guardados"
+                   + (f" em {data}" if data else "") + ". Rode a atualização antes.")
+    if rotas.carregar_sdk() is None:
+        raise rotas.ErroRota("A biblioteca oficial da Garmin (garmin-fit-sdk) não está "
+                             "instalada. Instale com: " + rotas.INSTALAR)
+    dist = a.get("distance")
+    print("Teste de rota (só leitura)")
+    print(f"- Atividade escolhida: {(a.get('startTimeLocal') or '')[:10]}, "
+          f"{g(a, 'activityType', 'typeKey')}, {km(dist)} "
+          f"(a Garmin indica trilha de GPS: {'sim' if a.get('hasPolyline') else 'não informado'})")
+    print(f"- Biblioteca oficial da Garmin: garmin-fit-sdk {rotas.versao_sdk()}")
+    pacote = cli.get_bytes(f"/download-service/files/activity/{a['activityId']}", rotas.LIMITE_ZIP)
+    print()
+    fit = rotas.extrair_fit(pacote)
+    mesgs = rotas.decodificar(fit)
+    pts = rotas.pontos_gps(mesgs)
+    r = rotas.resumo(mesgs, pts)
+    print(f"- Arquivo recebido: {len(pacote) // 1024} KB (FIT de {len(fit) // 1024} KB)")
+    pct = round(100 * r["com_gps"] / r["registros"]) if r["registros"] else 0
+    print(f"- Registros no arquivo: {r['registros']}; com GPS: {r['com_gps']} ({pct}%)")
+    print("- Dados por registro: " + "; ".join(f"{k}: {'sim' if v else 'não'}" for k, v in r["campos"].items()))
+    print(f"- Esporte registrado no arquivo: {(r['esporte'] or ['?'])[0]}")
+    if r["extensao_m"]:
+        print(f"- Área percorrida: cerca de {num(r['extensao_m'][0] / 1000, 1)} km de largura por "
+              f"{num(r['extensao_m'][1] / 1000, 1)} km de altura (as coordenadas não são mostradas)")
+        print(f"- Comprimento da trilha: {num(r['comprimento_m'] / 1000, 2)} km "
+              f"(a atividade tem {km(dist)})")
+        print(f"- Trilha simplificada: {len(rotas.simplificar(pts))} pontos")
+    else:
+        print("- Esta atividade não tem trilha de GPS (esteira, ou GPS desligado).")
+    print("- Mensagens no arquivo: " + ", ".join(
+        f"{k.replace('_mesgs', '')}={v}" for k, v in sorted(r["mensagens"].items(), key=lambda kv: -kv[1])[:8]))
+    print("Teste concluído. Nenhuma coordenada, chave ou token foi mostrado ou salvo; o arquivo FIT não foi gravado.")
+
+
 def caminho_armazem():
     return os.path.join(pasta_dados(), "dados_brutos.json")
 
@@ -506,6 +573,9 @@ def main(argv=None):
     p.add_argument("--historico", type=int, metavar="DIAS",
                    help="busca também o histórico dos últimos DIAS dias (para os "
                         "recordes); demora na primeira vez")
+    p.add_argument("--teste-rota", action="store_true",
+                   help="baixa o FIT de uma corrida e confere se dá para ler a trilha "
+                        "(use --data AAAA-MM-DD para escolher o dia)")
     p.add_argument("--criar-perfil", action="store_true",
                    help="cria perfil.txt, provas.txt e as pastas de imagens para o "
                         "visual de corredor (foto, logos e provas)")
@@ -568,6 +638,9 @@ def main(argv=None):
             gerar(dados, hoje, ini, quando, avisos, not a.sem_abrir)
             return 0
         cli = Cliente(ler_chave())
+        if a.teste_rota:
+            modo_teste_rota(cli, a.data)
+            return 0
         if a.teste:
             dia = (dt.date.fromisoformat(a.data) if a.data
                    else dt.date.today() - dt.timedelta(days=1))
@@ -581,7 +654,7 @@ def main(argv=None):
             avisos = atualizar_armazem(cli, dados, hoje, busca_ini)
             gerar(dados, hoje, ini, dt.datetime.now(), avisos, not a.sem_abrir)
         return 0
-    except (Erro, ErroCofre) as e:
+    except (Erro, ErroCofre, rotas.ErroRota) as e:
         print(f"ERRO: {e}")
         return 1
     except Exception as e:  # nunca mostra detalhes que possam ter segredos

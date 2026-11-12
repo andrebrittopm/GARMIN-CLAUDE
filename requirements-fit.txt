@@ -1,0 +1,6 @@
+# Biblioteca OFICIAL da Garmin para ler arquivos FIT (publicada por Garmin International, Inc.).
+# Versão e assinatura (hash) fixas: o pip recusa qualquer arquivo diferente deste.
+# Instalação: py -m pip install --require-hashes --target libs -r requirements-fit.txt
+# Licença: FIT Protocol License Agreement (uso pessoal permitido; NÃO redistribuir -> não vai ao GitHub).
+garmin-fit-sdk==21.221.0 \
+    --hash=sha256:7918af718bc350951e9ca7f1fa9f03aa8b2e8b756d0a3fa57920538b5a78cb79

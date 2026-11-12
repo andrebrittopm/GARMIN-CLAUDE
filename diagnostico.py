@@ -145,6 +145,13 @@ def executar():
         except OSError:
             atencao("Não consegui ler o ultimo_log.txt.")
 
+    # --- biblioteca oficial da Garmin para rotas (opcional)
+    import rotas
+    if rotas.carregar_sdk() is None:
+        ok("Biblioteca oficial para rotas (FIT): não instalada (só é necessária para as rotas)")
+    else:
+        ok(f"Biblioteca oficial para rotas (FIT): garmin-fit-sdk {rotas.versao_sdk()} instalada")
+
     # --- tarefa agendada (Windows)
     if sys.platform == "win32":
         existe = comando_ok(["schtasks", "/Query", "/TN", NOME_TAREFA])
