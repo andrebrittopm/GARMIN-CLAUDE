@@ -4,16 +4,17 @@ import datetime as dt
 SEM_DADO = "sem dado"
 DIAS_SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
 
-# Esportes: (chave, rótulo, cor). Cores escolhidas para se distinguirem também
-# em daltonismo (paleta Okabe-Ito adaptada ao fundo escuro) e SEM amarelo/ouro,
-# que é reservado para marcar atenção (meta, média, hoje).
+# Esportes: (chave, rótulo, cor). Nesta ordem, as 5 cores passam no validador da
+# skill dataviz (modo escuro, fundo #1a1426): faixa de luminosidade, croma,
+# separação em daltonismo (pior par adjacente ΔE 9,4) e contraste >= 3:1.
+# SEM amarelo/ouro, reservado para marcar atenção (meta, média, hoje).
 ESPORTES = [
-    ("corrida", "Corrida", "#56B4E9"),
-    ("ciclismo", "Ciclismo", "#E4572E"),
-    ("natacao", "Natação", "#22A07A"),
-    ("forca", "Musculação", "#CC79A7"),
-    ("caminhada", "Caminhada", "#9AA7C0"),
-    ("outros", "Outros", "#7D8294"),
+    ("corrida", "Corrida", "#3987E5"),
+    ("ciclismo", "Ciclismo", "#D95926"),
+    ("natacao", "Natação", "#199E70"),
+    ("forca", "Musculação", "#9085E9"),
+    ("caminhada", "Caminhada", "#D55181"),
+    ("outros", "Outros", "#8B8F9E"),   # cinza = "Outros" (fora da checagem de matizes)
 ]
 _ROTULO = {k: r for k, r, _ in ESPORTES}
 _COR = {k: c for k, _, c in ESPORTES}
