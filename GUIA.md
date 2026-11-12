@@ -39,6 +39,7 @@ diagnóstico e sem conselho de treino.
 | `libs/`, `requirements-fit.txt` | Biblioteca oficial da Garmin (FIT) e a versão fixa dela | Não |
 | `rotas.json` | Trilhas de GPS simplificadas (**dados de localização**, só neste computador) | Não |
 | `perfil.txt`, `provas.txt`, `imagens\\` | Seu nome, suas provas, foto e logos | **Sim** |
+| `plano.json`, `plano.py` | Sua meta, ciclos e selos (opcional) e as contas do plano de prova | **Sim** (o .json) |
 | `dados_brutos.json` | Seus dados guardados (**dados de saúde**, sem chave) | Não |
 | `backups/` | Até 5 cópias diárias do arquivo acima | Só para restaurar |
 | `ultimo_log.txt` | O que a última atualização automática fez | Para olhar |
@@ -163,6 +164,36 @@ o código novo é válido e guarda a versão antiga em `backup_programa\`.
 - Voltar à versão anterior: `py garmin_painel.py --desfazer-atualizacao`.
 - Segurança: o programa novo roda no seu computador com acesso à sua chave da Garmin. Mantenha a
   **verificação em duas etapas** ligada na sua conta do GitHub.
+
+### Plano de prova (opcional): meta, ciclos, selos e ritmo de cada km
+Coloque um arquivo `plano.json` na pasta dos dados e, na próxima atualização, o painel mostra:
+**Rumo à prova** (contagem regressiva e barra do equivalente em 10 km até a sua meta), **Trilha dos ciclos**
+(km corridos em cada ciclo, com fases e testes), **Conquistas** (selos com progresso e a data em que
+foram conquistados), **Plano de prova** (ritmo e passagem de cada km para 5, 7, 10, 21 e 42 km) e a coluna
+**Equiv. 10 km** na tabela de atividades, com a cor da borda mostrando o ritmo de cada corrida.
+Sem `plano.json`, o painel fica igual ao de antes (só a coluna Equiv. 10 km aparece).
+
+Todo número de desempenho vem da Garmin. O que é conta, é dito na tela:
+- **Equivalente em 10 km** = fórmula de Riegel: tempo × (10 ÷ distância)^1,06, só para corridas de 5 km ou mais.
+  O "melhor equivalente" olha os últimos 60 dias. É estimativa, não um tempo medido.
+- **Previsão de hoje** para 5, 7, 10, 21 e 42 km = a mesma fórmula a partir do melhor equivalente.
+  Para 21 e 42 km ela tende a ser otimista. O ritmo é uniforme; só a prova que traz `altitude_km` no
+  `plano.json` é ajustada ao relevo (custo de Minetti, 2002).
+- **Cor da borda**: ritmo de cada corrida comparado ao ritmo do seu equivalente em 10 km
+  (fácil, moderado, forte, ritmo de prova ou mais rápido).
+
+Formato do `plano.json` (campos que faltarem ou estiverem errados são ignorados, nunca derrubam o painel):
+```
+{"inicio": "2026-10-08",
+ "prova": {"nome": "Minha prova", "data": "2027-07-04", "dist_km": 10, "meta_min": 41.5,
+           "altitude_km": [636, 648, 645, 632, 630, 625, 605, 584, 571, 543, 544]},
+ "marcos": [{"data": "2026-12-08", "marco": "Teste do ciclo 8", "meta_min": 45.75}],
+ "ciclos": [{"ciclo": 1, "inicio": "2026-10-08", "fim": "2026-10-15", "fase": "Base", "teste": null}],
+ "selos": {"longao_km": [10, 12, 14], "equiv_10k_min": [45, 44, 43, 42, 41.5],
+           "ritmo_s": [270, 249], "ciclo_km": [30, 40, 50]}}
+```
+`altitude_km` tem um valor por km, de 0 até a distância da prova (11 valores para 10 km). O arquivo fica
+só no seu computador (não vai para o GitHub).
 
 ### Rotas e percursos (opcional)
 

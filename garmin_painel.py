@@ -48,6 +48,7 @@ import corredor  # noqa: E402
 import diagnostico  # noqa: E402
 import metas  # noqa: E402
 import notificacao  # noqa: E402
+import plano  # noqa: E402
 import rotas  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
                    ler_chave, ler_token_cache)
@@ -557,6 +558,24 @@ def atualizar_armazem(cli, dados, hoje, ini):
     return avisos
 
 
+def montar_plano(pasta, historico, hoje):
+    """Cálculos do plano.json (meta, ciclos, selos, plano de prova) ou None se não há plano.
+    Um erro aqui nunca derruba o painel: sem plano, o resto aparece igual."""
+    try:
+        pl = plano.carregar(pasta)
+        if pl is None:
+            return None
+        cicl = plano.ciclos(pl, historico, hoje)
+        atual = plano.melhor_equivalente(historico, hoje - dt.timedelta(days=plano.JANELA_EQUIV_DIAS), hoje)
+        return {"rumo": plano.contagem(pl, historico, hoje), "ciclos": cicl,
+                "selos": plano.selos(pl, historico, cicl, hoje),
+                "plano": plano.blocos_plano(pl, historico, hoje),
+                "ref_pace": atual[0] / 10 if atual else None}
+    except Exception as e:  # noqa: BLE001
+        print(f"AVISO: não consegui montar o plano ({type(e).__name__}); o resto do painel foi gerado.")
+        return None
+
+
 def gerar(dados, hoje, ini, agora, avisos, abrir):
     resumos, sonos, vfc, brutas, peso = armazem.recorte(dados, ini, hoje)
     ativ = montar_atividades(brutas)
@@ -571,6 +590,7 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
                            venc[0] if venc else None,
                            historico=historico, metas=metas.progresso(pasta, historico, hoje),
                            cobertura_ini=dados.get("cobertura_ini"), corredor=co,
+                           plano_info=montar_plano(pasta, historico, hoje),
                            rotas=preparar_rotas(pasta, historico) if os.path.exists(rotas.caminho_rotas(pasta)) else None)
     caminho = os.path.join(pasta, "painel.html")
     tmp = caminho + ".tmp"            # grava inteiro e só então troca: nunca fica pela metade

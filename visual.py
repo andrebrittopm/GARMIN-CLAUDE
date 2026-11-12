@@ -13,6 +13,8 @@ import math
 from arte import (arte_topo, arte_topo_real, foto_exemplo, perfil_elevacao_svg,
                   rota_real_svg, rotas_sobrepostas_svg, selo_iniciais)
 import rotas as rotas_mod
+import plano as plano_mod
+from plano import mmss_min
 from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, comparar_semanas, cor_esporte, data_br,
                       grupo, hcurto, hm, hms, km, minutos, num, pace,
                       pace_de_velocidade, rotulo_esporte, segunda,
@@ -558,7 +560,7 @@ def _cel(i, x, esq):
     return f'<td class="{cl.strip()}"{ordem}>{esc(x)}</td>'
 
 
-def tabela(nome, cabecalho, linhas, esq=(0,), datas=None):
+def tabela(nome, cabecalho, linhas, esq=(0,), datas=None, classes=None):
     """Tabela ordenável (clique no título) com botão de exportar CSV.
     Cada célula pode ser texto ou (texto, valor_para_ordenar)."""
     h = "".join(f'<th class="ord{" e" if i in esq else ""}" tabindex="0" role="button" '
@@ -567,6 +569,8 @@ def tabela(nome, cabecalho, linhas, esq=(0,), datas=None):
     corpo = []
     for n, l in enumerate(linhas):
         d = f' data-d="{datas[n]}"' if datas and datas[n] else ""
+        if classes and classes[n]:
+            d += f' class="{classes[n][0]}" title="Ritmo {esc(classes[n][1])} (comparado ao seu equivalente em 10 km)"'
         corpo.append(f"<tr{d}>" + "".join(_cel(i, x, esq) for i, x in enumerate(l)) + "</tr>")
     return (f'<div class="tb"><div class="barra"><button type="button" class="csv" '
             f'data-nome="{esc(nome)}">Exportar CSV</button></div>'
@@ -628,7 +632,16 @@ def recordes(historico):
     return linhas
 
 
-def tabelas(dias, atividades, ini, hoje):
+def _equiv_cel(a):
+    e = plano_mod.equivalente_de(a)
+    if e is not None:
+        return _v(hms(e), e)
+    if grupo(a["tipo"]) == "corrida" and a.get("dist_m") and a["dist_m"] < plano_mod.MIN_EQUIV_M:
+        return ("abaixo de 5 km", "")
+    return (SEM_DADO if grupo(a["tipo"]) == "corrida" else "", "")
+
+
+def tabelas(dias, atividades, ini, hoje, ref_pace=None):
     sem0 = segunda(hoje)
     semanas, s = [], sem0
     while s >= segunda(ini):
@@ -638,7 +651,7 @@ def tabelas(dias, atividades, ini, hoje):
                         _v(hms(t["dur_s"]) if t["n"] else SEM_DADO, t["dur_s"]),
                         _v(pace(t["pace"]), t["pace"])])
         s -= dt.timedelta(days=7)
-    linhas_at, datas_at = [], []
+    linhas_at, datas_at, classes_at = [], [], []
     for a in atividades:
         g_ = grupo(a["tipo"])
         com_pace = g_ in ("corrida", "caminhada")
@@ -651,8 +664,10 @@ def tabelas(dias, atividades, ini, hoje):
             _v(f'{num(a["fc_media"])} bpm' if a.get("fc_media") else SEM_DADO, a.get("fc_media")),
             _v(f'{num(a["cad"])} ppm' if a.get("cad") else SEM_DADO, a.get("cad")),
             _v(f'{num(a["elev_m"])} m' if a.get("elev_m") is not None else SEM_DADO, a.get("elev_m")),
-            _v(num(a["vo2"]) if a.get("vo2") else SEM_DADO, a.get("vo2"))])
+            _v(num(a["vo2"]) if a.get("vo2") else SEM_DADO, a.get("vo2")),
+            _equiv_cel(a)])
         datas_at.append(a["data"])
+        classes_at.append(plano_mod.zona_ritmo(pc, ref_pace) if grupo(a["tipo"]) == "corrida" else None)
     por_dia = {}
     for a in atividades:
         if a["data"]:
@@ -681,7 +696,7 @@ def tabelas(dias, atividades, ini, hoje):
             _v(num(d.get("hidrat_ml")), d.get("hidrat_ml")),
             _v(num(d.get("meta_hidrat_ml")), d.get("meta_hidrat_ml"))])
         datas_d.append(d["data"])
-    return semanas, linhas_at, datas_at, linhas_d, datas_d
+    return semanas, linhas_at, datas_at, linhas_d, datas_d, classes_at
 
 
 # ------------------------------------- comparação de semanas e metas ----
@@ -912,6 +927,184 @@ def medalhas_html(recs):
                          f'<div class="t1">{esc(nome.replace("Mais rápido: ", ""))}</div>'
                          f'<div class="t2">{esc(dia)}</div></div>')
     return f'<div class="medalhas">{"".join(itens)}</div>' if itens else ""
+
+
+# ------------------------------------------------ plano / meta da prova ----
+FASE_CORES = ["#56B4E9", "#E69F00", "#CC79A7", "#009E73", "#F0E442", "#D55E00", "#999999"]
+
+
+def card_rumo(c):
+    """Contagem regressiva e barra do equivalente em 10 km até a meta (só números da Garmin + Riegel)."""
+    if c["dias"] > 0:
+        dias = f'{c["dias"]}<small> dias</small>'
+        nota = f'até a largada em {data_br(c["data"].isoformat())}'
+    elif c["dias"] == 0:
+        dias, nota = "Hoje", "é o dia da prova"
+    else:
+        dias, nota = "Prova realizada", f'em {data_br(c["data"].isoformat())}'
+    meta = mmss_min(c["meta_s"] / 60) if c["meta_s"] else None
+    atual = c["atual"]
+    barra = ""
+    if c["frac"] is not None:
+        pc = round(c["frac"] * 100)
+        barra = (f'<div class="trilho" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{pc}" '
+                 f'aria-label="Caminho até a meta"><i class="enche" style="width:{pc}%"></i></div>'
+                 f'<div class="txt rumo-txt"><span class="vv">início do plano {esc(hms(c["inicio"][0]))}</span>'
+                 f'<span class="vv pct">{pc}%</span><span class="vv">meta {esc(meta)}</span></div>')
+    elif c["meta_s"]:
+        falta = ("sem corrida de 5 km ou mais nos últimos 60 dias" if not atual else
+                 "sem ponto de partida (nenhuma corrida de 5 km ou mais em volta do início do plano)")
+        barra = f'<p class="sd">Barra até a meta: {esc(falta)}.</p>'
+    ref = (f'<div class="rumo-eq"><span class="r">Melhor equivalente em 10 km (últimos 60 dias)</span>'
+           f'<span class="v">{esc(hms(atual[0]))}</span>'
+           f'<span class="mut">corrida de {data_br(atual[1])}, {esc(km(atual[2]["dist_m"]))} em {esc(hms(atual[2]["dur_s"]))}</span></div>'
+           if atual else '<div class="rumo-eq"><span class="r">Melhor equivalente em 10 km</span>'
+                         f'<span class="v sd">{SEM_DADO}</span><span class="mut">precisa de uma corrida de 5 km ou mais nos últimos 60 dias</span></div>')
+    corpo = (f'<div class="rumo"><div class="rumo-dias"><span class="r">{esc(c["nome"])}</span>'
+             f'<span class="v">{dias}</span><span class="mut">{esc(nota)}</span></div>{ref}</div>{barra}'
+             '<p class="sub">Equivalente em 10 km = fórmula de Riegel, tempo × (10 ÷ distância)^1,06, '
+             'aplicada às corridas de 5 km ou mais (é uma estimativa, não um tempo medido). '
+             'A meta é sua, do arquivo plano.json.</p>')
+    return cartao("Rumo à prova", f'{c["dist_km"]:g} km · meta e contagem', corpo)
+
+
+def card_ciclos(lista, hoje):
+    fases = []
+    for c in lista:
+        if c["fase"] and c["fase"] not in fases:
+            fases.append(c["fase"])
+    cor = {f: FASE_CORES[i % len(FASE_CORES)] for i, f in enumerate(fases)}
+    mx = max((c["km"] for c in lista if c["km"]), default=0) or 1
+    cel = []
+    for c in lista:
+        h = 0 if not c["km"] else max(6, round(c["km"] / mx * 100))
+        km_txt = SEM_DADO if c["km"] is None else km(c["km"] * 1000)
+        t = [f'Ciclo {c["ciclo"]} · {c["fase"] or "sem fase"}',
+             f'Período|{intervalo(c["inicio"], c["fim"])}', f'Distância|{km_txt}']
+        if c["teste"]:
+            t.append(f'Teste|{c["teste"].strftime("%d/%m")}')
+        sit = c["situacao"]
+        cel.append(
+            f'<div class="ci {sit}" style="--c:{cor.get(c["fase"], "#999")}" data-tip="{esc(chr(10).join(t))}" '
+            f'tabindex="0" aria-label="{esc(" ".join(t).replace("|", " "))}">'
+            f'<div class="ci-b"><i style="height:{h}%"></i></div>'
+            f'<span class="ci-n">{c["ciclo"]}</span>'
+            f'<span class="ci-k">{esc(num(c["km"], 0)) if c["km"] else ("0" if c["km"] == 0 else "")}</span>'
+            + ('<span class="ci-t" title="Teste">★</span>' if c["teste"] else "") + "</div>")
+    leg = "".join(f'<span class="chip"><i class="quad" style="--c:{cor[f]}"></i>{esc(f)}</span>' for f in fases)
+    ok = [c for c in lista if c["km"] is not None]
+    resumo = ""
+    if ok:
+        resumo = (f'<p class="sub">{len(ok)} de {len(lista)} ciclos já começaram · maior ciclo: '
+                  f'{esc(km(max(c["km"] for c in ok) * 1000))}. ★ = data de teste. '
+                  'A altura de cada coluna é a distância de corrida do ciclo (Garmin); ciclos futuros ficam vazios.</p>')
+    return cartao("Trilha dos ciclos", "um ciclo por coluna · passe o mouse (ou toque) para ver o período",
+                  f'<div class="legrow">{leg}</div><div class="ciclos">{"".join(cel)}</div>{resumo}')
+
+
+def card_selos(lista):
+    if not lista:
+        return ""
+    feitos = sum(1 for s in lista if s["feito"])
+    itens = []
+    for s in lista:
+        pc = round(s["pct"] * 100)
+        rod = (f'conquistado em {data_br(s["data"])}' if s["feito"] and s["data"] else
+               "conquistado" if s["feito"] else (s["falta"] or f"{pc}%"))
+        itens.append(
+            f'<div class="selo{" feito" if s["feito"] else ""}"><div class="selo-t"><b>{esc(s["nome"])}</b>'
+            f'<span class="mut">{esc(s["desc"])}</span></div>'
+            f'<div class="trilho" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{pc}" '
+            f'aria-label="{esc(s["nome"])}"><i class="enche" style="width:{pc}%"></i></div>'
+            f'<div class="selo-r">{esc(rod)}</div></div>')
+    return cartao("Conquistas", f"{feitos} de {len(lista)} selos conquistados",
+                  '<div class="selos">' + "".join(itens) + '</div>'
+                  '<p class="sub">Calculado com as corridas guardadas da Garmin. “No total” soma só o histórico guardado neste computador.</p>')
+
+
+def card_plano_prova(pl):
+    """Passagens km a km para 5, 7, 10, 21 e 42 km (estimativas)."""
+    if not pl["base"]:
+        return cartao("Plano de prova — ritmo de cada km", "estimativas por distância",
+                      f'<p class="sd">{SEM_DADO}: o plano precisa de uma corrida de 5 km ou mais nos últimos 60 dias.</p>')
+    dist_btn, blocos = [], []
+    for b in pl["blocos"]:
+        ativo = b["dist"] == 10
+        dist_btn.append(f'<button type="button" class="pl-b" data-d="{b["dist"]}" aria-pressed="{"true" if ativo else "false"}">{b["dist"]} km</button>')
+        opt_btn, tabs = [], []
+        for i, (nome, t, linhas) in enumerate(b["opcoes"]):
+            on = i == 0
+            opt_btn.append(f'<button type="button" class="pl-o" data-o="{i}" aria-pressed="{"true" if on else "false"}">{esc(nome)} · {esc(hms(t))}</button>')
+            media = t / b["dist_km"]
+            res = (f'<div class="pl-sum"><span><b>{esc(hms(t))}</b> tempo total</span>'
+                   f'<span><b>{esc(pace(media))}</b> ritmo médio</span>'
+                   + ('<span class="mut">ajustado ao relevo da prova</span>' if b["alt"] else "") + "</div>")
+            corpo = []
+            for r in linhas:
+                terreno = ("" if r["dz"] is None else ("plano" if abs(r["dz"]) < 4 else
+                           ("▲ " if r["dz"] > 0 else "▼ ") + f'{num(abs(r["dz"]))} m'))
+                lab = f'{r["km"]}' if r["dist"] == 1.0 else f'{r["km"] - 1 + r["dist"]:.3f}'.rstrip("0").replace(".", ",")
+                ritmo = pace(r["t"] / r["dist"])
+                corpo.append(f'<tr><td class="e">{esc(lab)}</td>'
+                             + (f'<td class="e">{esc(terreno)}</td>' if b["alt"] else "")
+                             + f'<td>{esc(ritmo)}</td><td>{esc(hms(r["acum"]))}</td></tr>')
+            cab = ('<th class="e">km</th>' + ('<th class="e">terreno</th>' if b["alt"] else "")
+                   + '<th>ritmo</th><th>passagem</th>')
+            tabs.append(f'<div class="pl-t{" on" if on else ""}" data-o="{i}">{res}<div class="tw pl-tw"><table class="pl-tab">'
+                        f'<thead><tr>{cab}</tr></thead><tbody>{"".join(corpo)}</tbody></table></div></div>')
+        aviso = ('<p class="sub">Para 21 e 42 km a fórmula de Riegel costuma dar tempos mais rápidos do que se consegue sem treino '
+                 'específico para a distância; trate como referência de cálculo.</p>' if b["dist"] >= 21 else "")
+        blocos.append(f'<div class="pl-d{" on" if ativo else ""}" data-d="{b["dist"]}"><div class="legrow">{"".join(opt_btn)}</div>'
+                      f'{"".join(tabs)}{aviso}</div>')
+    base = pl["base"]
+    nota = (f'<p class="sub">Previsão de hoje = Riegel a partir do melhor equivalente em 10 km ({esc(hms(base[0]))}, '
+            f'corrida de {data_br(base[1])}). Ritmo uniforme; só a prova com perfil de altitude no plano.json é ajustada ao relevo '
+            '(custo de Minetti, 2002). São estimativas de cálculo, não promessa nem orientação de treino.</p>')
+    return cartao("Plano de prova — ritmo de cada km", "escolha a distância · passe e compare as opções",
+                  f'<div class="legrow pl-dist">{"".join(dist_btn)}</div>{"".join(blocos)}{nota}')
+
+
+PLANO_CSS = """
+.rumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 28px;margin-bottom:10px}
+.rumo .r{display:block;color:var(--mut);font-size:.74rem;text-transform:uppercase;letter-spacing:.07em}
+.rumo .v{display:block;font:700 2.1rem/1.15 var(--mono);color:var(--roxo2)}
+.rumo .v small{font-size:1rem;color:var(--mut)}
+.rumo-txt{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 16px;font-size:.82rem}
+.ciclos{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:8px;margin-top:6px}
+.ci{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px 5px;border-radius:10px;
+border:1px solid var(--bd);background:rgba(139,92,246,.06);min-height:96px}
+.ci-b{display:flex;align-items:flex-end;width:20px;height:46px;border-bottom:2px solid var(--c)}
+.ci-b i{display:block;width:100%;background:var(--c);border-radius:3px 3px 0 0}
+.ci.futuro{opacity:.55}.ci.atual{border-color:var(--ouro);box-shadow:0 0 0 1px var(--ouro)}
+.ci-n{font:700 .72rem var(--mono);color:var(--tx)}.ci-k{font:700 .66rem var(--mono);color:var(--mut);min-height:1em}
+.ci-t{position:absolute;top:1px;right:4px;font-size:.7rem;color:var(--ouro)}
+.selos{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.selo{border:1px solid var(--bd);border-radius:14px;padding:11px 13px;background:rgba(139,92,246,.05)}
+.selo.feito{border-color:var(--ouro)}.selo-t b{display:block;font-size:.9rem}.selo-t .mut{font-size:.74rem;display:block;min-height:2.1em}
+.selo-r{font:700 .74rem var(--mono);color:var(--mut)}.selo.feito .selo-r{color:var(--ouro)}
+.pl-d,.pl-t{display:none}.pl-d.on,.pl-t.on{display:block}
+.pl-b,.pl-o{font:700 .8rem var(--mono);color:var(--tx);background:rgba(139,92,246,.12);border:1px solid var(--bd);
+border-radius:999px;padding:6px 14px;cursor:pointer}
+.pl-b[aria-pressed=true],.pl-o[aria-pressed=true]{background:var(--roxo);border-color:var(--roxo2)}
+.pl-dist{margin-bottom:10px}.pl-sum{display:flex;flex-wrap:wrap;gap:6px 22px;margin:8px 0;font-size:.88rem}
+.pl-sum b{font-family:var(--mono)}.pl-tw{max-height:460px;overflow:auto}
+tr.z1 td:first-child{box-shadow:inset 4px 0 0 #009E73}tr.z2 td:first-child{box-shadow:inset 4px 0 0 #F0E442}
+tr.z3 td:first-child{box-shadow:inset 4px 0 0 #E69F00}tr.z4 td:first-child{box-shadow:inset 4px 0 0 #D55E00}
+i.z1{background:#009E73}i.z2{background:#F0E442}i.z3{background:#E69F00}i.z4{background:#D55E00}
+@media(max-width:560px){.ciclos{grid-template-columns:repeat(auto-fill,minmax(40px,1fr))}.rumo .v{font-size:1.7rem}}
+"""
+
+PLANO_JS = """
+(function(){
+function marca(grupo,sel,alvo){grupo.forEach(function(b){b.setAttribute('aria-pressed',b===alvo?'true':'false');});}
+document.querySelectorAll('.pl-b').forEach(function(b){b.addEventListener('click',function(){
+  var d=b.getAttribute('data-d');marca(document.querySelectorAll('.pl-b'),'',b);
+  document.querySelectorAll('.pl-d').forEach(function(x){x.classList.toggle('on',x.getAttribute('data-d')===d);});});});
+document.querySelectorAll('.pl-d').forEach(function(w){var bs=w.querySelectorAll('.pl-o');
+  bs.forEach(function(b){b.addEventListener('click',function(){var o=b.getAttribute('data-o');marca(bs,'',b);
+    w.querySelectorAll('.pl-t').forEach(function(t){t.classList.toggle('on',t.getAttribute('data-o')===o);});});});});
+})();
+"""
 
 
 # ---------------------------------------------------------------- página ----
@@ -1375,7 +1568,8 @@ document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' '
 
 
 def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
-           historico=None, metas=None, cobertura_ini=None, corredor=None, rotas=None):
+           historico=None, metas=None, cobertura_ini=None, corredor=None, rotas=None,
+           plano_info=None):
     """Devolve (html, nomes_dos_gráficos_omitidos).
 
     alertas: faixas de destaque no topo (ex.: chave perto de vencer).
@@ -1383,7 +1577,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     historico: todas as atividades guardadas (para os recordes).
     metas: lista de metas do usuário com o progresso (ver metas.progresso).
     cobertura_ini: data (texto ISO) em que começam os dados guardados.
-    corredor: perfil, provas e soma do período (ver corredor.montar), ou None."""
+    corredor: perfil, provas e soma do período (ver corredor.montar), ou None.
+    plano_info: {rumo, ciclos, selos, plano, ref_pace} calculado de plano.json, ou None."""
     hoje = fim
     sem0 = segunda(hoje)
     disponiveis = (fim - ini).days + 1
@@ -1403,6 +1598,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     omitidos, blocos = [], []
     if metas:
         blocos.append(cartao("Suas metas", "progresso até hoje", card_metas(metas)))
+    if plano_info and plano_info.get("rumo"):
+        blocos.append(card_rumo(plano_info["rumo"]))
     blocos.append(cartao("Esta semana × semana passada × média",
                          "corridas · números da Garmin",
                          card_comparacao(comparar_semanas(atividades, hoje, ini))))
@@ -1413,6 +1610,10 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
         blocos.append(provas_html(corredor, minis))
     if secao_r:
         blocos.append(secao_r)
+    if plano_info and plano_info.get("ciclos"):
+        blocos.append(card_ciclos(plano_info["ciclos"], hoje))
+    if plano_info and plano_info.get("plano"):
+        blocos.append(card_plano_prova(plano_info["plano"]))
     blocos.append(cartao("Tempo por esporte — semana atual",
                          f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse (ou toque) sobre uma fatia",
                          graf_anel(atividades, sem0, sem0 + dt.timedelta(days=6))))
@@ -1470,13 +1671,22 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     add("Zonas de FC por semana", "Tempo por zona de frequência cardíaca",
         "por semana · passe o mouse (ou toque) sobre uma semana", duas_versoes(lambda: graf_zonas_semana(atividades, ini, hoje)))
 
-    semanas, linhas_at, datas_at, linhas_d, datas_d = tabelas(dias, atividades, ini, hoje)
+    ref_pace = plano_info and plano_info.get("ref_pace")
+    semanas, linhas_at, datas_at, linhas_d, datas_d, classes_at = tabelas(dias, atividades, ini, hoje, ref_pace)
     t_sem = tabela("semanas", ["Semana", "Corridas", "Distância", "Tempo", "Pace médio"], semanas)
     t_at = (tabela("atividades", ["Data", "Esporte", "Nome", "Distância", "Duração", "Pace",
-                                  "FC média", "Cadência", "Elevação", "VO2máx"],
-                   linhas_at, esq=(0, 1, 2), datas=datas_at)
+                                  "FC média", "Cadência", "Elevação", "VO2máx", "Equiv. 10 km"],
+                   linhas_at, esq=(0, 1, 2), datas=datas_at, classes=classes_at)
             if linhas_at else '<p class="sd">sem dado: nenhuma atividade no período.</p>')
     recs = recordes(historico if historico is not None else atividades)
+    if plano_info and plano_info.get("selos"):
+        blocos.append(card_selos(plano_info["selos"]))
+    legenda_ritmo = ""
+    if ref_pace:
+        legenda_ritmo = ('<div class="legrow">' + "".join(
+            f'<span class="chip"><i class="quad z{i}"></i>{esc(r)}</span>'
+            for i, r in ((1, "fácil"), (2, "moderado"), (3, "forte"), (4, "ritmo de prova ou mais rápido"))) +
+            '<span class="mut">cor da borda das corridas = ritmo comparado ao seu equivalente em 10 km</span></div>')
     t_mel = ((medalhas_html(recs) + tabela("recordes", ["Recorde", "Valor", "Detalhe", "Dia"], recs, esq=(0, 2)))
              if recs else "")
     t_d = (tabela("dados-diarios", ["Dia", "Passos", "Meta passos", "Treino", "Sono", "Profundo",
@@ -1523,7 +1733,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Painel Garmin</title><style>{CSS}{regras}</style></head>
+<title>Painel Garmin</title><style>{CSS}{PLANO_CSS}{regras}</style></head>
 <body data-n="{padrao}" data-hoje="{hoje.isoformat()}" data-gerado="{agora.strftime('%Y-%m-%dT%H:%M:%S')}"><main>
 {cabecalho}
 
@@ -1536,7 +1746,7 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
 {"".join(blocos)}
 
 <h2 class="t">Semanas — corridas (segunda a domingo)</h2>{t_sem}
-<h2 class="t">Atividades</h2>{t_at}
+<h2 class="t">Atividades</h2>{legenda_ritmo}{t_at}
 {('<h2 class="t">Recordes pessoais — corridas</h2><p class="sub">' + esc(txt_hist) + '</p>' + t_mel) if t_mel else ""}
 <h2 class="t">Dados diários</h2>{t_d}
 {aviso_html}
@@ -1548,4 +1758,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script></body></html>""", omitidos
+</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script></body></html>""", omitidos
