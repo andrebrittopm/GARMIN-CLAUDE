@@ -269,6 +269,8 @@ def montar_dias(resumos, sonos):
             "sono_s": None,
         }
     for s in sonos:
+        if isinstance(g(s, "dailySleepDTO"), dict):   # caso venha embrulhado
+            s = s["dailySleepDTO"]
         data = g(s, "calendarDate")
         if not data:
             continue
@@ -491,6 +493,18 @@ def modo_teste(cli, dia):
     sonos = buscar_sono(cli, dia, dia)
     ativ = buscar_atividades(cli, dia, dia)
     d = montar_dias(resumos, sonos)
+    print("- Registro(s) de sono, como a Garmin enviou (campo: valor):")
+    for r in sonos:
+        if not isinstance(r, dict):
+            print(f"    (formato inesperado: {type(r).__name__})")
+            continue
+        for k, v in r.items():
+            if isinstance(v, (dict, list)):
+                print(f"    {k}: [{type(v).__name__} com {len(v)} item(ns)]")
+            elif v is not None:
+                print(f"    {k}: {v}")
+            else:
+                print(f"    {k}: (vazio)")
     print(f"- Resumo diário: {len(resumos)} registro(s)")
     print(f"- Sono: {len(sonos)} registro(s)")
     print(f"- Atividades: {len(ativ)}")
