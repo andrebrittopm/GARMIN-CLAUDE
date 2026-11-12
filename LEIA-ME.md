@@ -5,6 +5,11 @@ Só lê dados; não altera nada na conta. A chave fica no cofre do sistema
 (Gerenciador de Credenciais do Windows ou Chaves do Mac), com o nome
 `garmin-personal-api-key`, e nunca é gravada em arquivo.
 
+Arquivos: `garmin_painel.py` (busca os dados), `formatos.py` (números e
+esportes), `visual.py` (página e gráficos), `atualizar.bat` (atalho).
+
 - Testar com 1 dia: `py garmin_painel.py --teste`
-- Atualizar o painel: dê dois cliques em `atualizar.bat` (ou `py garmin_painel.py`)
+- Atualizar o painel e os gráficos: dois cliques em `atualizar.bat`
+  (ou `py garmin_painel.py`)
 - O painel é o arquivo `painel.html` (fica só no seu computador).
+- Teste automático com servidor falso: `python tests/test_painel.py`
