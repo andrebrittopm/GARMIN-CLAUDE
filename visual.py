@@ -3,7 +3,7 @@
 Regras de dados: só usa o que a Garmin enviou. Dia sem dado fica VAZIO no
 gráfico (nunca vira zero) e aparece como "sem dado" no balão e nas tabelas.
 Ouro/amarelo é reservado para marcar atenção: meta de passos, média semanal
-do sono e o dia de hoje. Nenhum esporte usa essa cor.
+do sono e o dia de hoje / semana atual. Nenhum esporte usa essa cor.
 """
 import datetime as dt
 import html
@@ -14,13 +14,20 @@ from formatos import (DIAS_SEMANA, ESPORTES, SEM_DADO, cor_esporte, data_br,
                       pace_de_velocidade, rotulo_esporte, segunda,
                       totais_semana)
 
-W, PL, PR, PT, PB, N = 1000, 58, 14, 14, 62, 14
+W, PL, PR, PT, PB = 1000, 58, 14, 14, 62
+OPCOES = (7, 14, 30)       # períodos que o seletor oferece
+PADRAO = 14
+MAX_SEMANAS = 12
 OURO = "#FFD23F"
 ROXO = "#8B6CF4"
 ROXO_CLARO = "#C4B5FD"
 SONO = {"prof": ("Profundo", "#6C4BE8"), "leve": ("Leve", "#A592F5"),
         "rem": ("REM", "#E4DBFF")}
 SONO_SEM_FASES = "#6F678C"
+ZONAS = [("Z1", "#E4DBFF"), ("Z2", "#C4B5FD"), ("Z3", "#A592F5"),
+         ("Z4", "#7C5CF0"), ("Z5", "#5B3BD6")]
+MELHORES = [(1000, "1 km"), (1609, "1 milha"), (5000, "5 km"),
+            (10000, "10 km"), (21098, "Meia maratona")]
 
 
 def esc(x):
@@ -28,20 +35,28 @@ def esc(x):
 
 
 # --------------------------------------------------------------- geometria --
-def janela(fim):
-    return [fim - dt.timedelta(days=N - 1 - i) for i in range(N)]
+def janela(fim, n):
+    return [fim - dt.timedelta(days=n - 1 - i) for i in range(n)]
 
 
-def slot():
-    return (W - PL - PR) / N
+def slot(m):
+    return (W - PL - PR) / m
 
 
-def cx(i):
-    return PL + slot() * (i + 0.5)
+def cx(i, m):
+    return PL + slot(m) * (i + 0.5)
+
+
+def larg_barra(m, frac=0.56):
+    return min(slot(m) * frac, 90)
 
 
 def yv(v, lo, hi, h):
     return PT + (h - PT - PB) * (1 - (v - lo) / (hi - lo))
+
+
+def altura(v, lo, hi, h):
+    return v / (hi - lo) * (h - PT - PB)
 
 
 def escala(lo, hi, alvos=4, mults=(1, 2, 2.5, 5, 10)):
@@ -77,29 +92,44 @@ def tip(titulo, *linhas):
     return "\n".join([titulo, *linhas])
 
 
-def moldura(h, lo, hi, marcas, fmt, dias, hoje, valores):
-    """Grade, eixo Y, datas e linha de valores sob cada dia."""
+def rotulos_dias(dias, hoje):
+    """(linha1, linha2, destaque) por dia; None onde o rótulo é omitido."""
+    n, out, primeiro = len(dias), [], True
+    for i, d in enumerate(dias):
+        if n > 16 and (n - 1 - i) % 2:
+            out.append(None)
+            continue
+        rot = f"{d.day:02d}/{d.month:02d}" if (d.day == 1 or primeiro) else f"{d.day:02d}"
+        primeiro = False
+        out.append((DIAS_SEMANA[d.weekday()], rot, d == hoje))
+    return out
+
+
+def moldura(h, lo, hi, marcas, fmt, rotulos, valores):
+    """Grade, eixo Y, datas e linha de valores sob cada coluna."""
+    m = len(rotulos)
     out = []
     for t in marcas:
         y = yv(t, lo, hi, h)
         out.append(f'<line class="gl" x1="{PL}" x2="{W - PR}" y1="{y:.1f}" y2="{y:.1f}"/>')
         out.append(f'<text class="yl" x="{PL - 8}" y="{y + 4:.1f}" text-anchor="end">{esc(fmt(t))}</text>')
     yb = h - PB
-    for i, d in enumerate(dias):
-        cl = "xl hoje" if d == hoje else "xl"
-        rot = f"{d.day:02d}/{d.month:02d}" if (i == 0 or d.day == 1) else f"{d.day:02d}"
-        out.append(f'<text class="{cl}" x="{cx(i):.1f}" y="{yb + 16}" text-anchor="middle">{DIAS_SEMANA[d.weekday()]}</text>')
-        out.append(f'<text class="{cl}" x="{cx(i):.1f}" y="{yb + 29}" text-anchor="middle">{rot}</text>')
+    for i, r in enumerate(rotulos):
+        if r is None:
+            continue
+        cl = "xl hoje" if r[2] else "xl"
+        out.append(f'<text class="{cl}" x="{cx(i, m):.1f}" y="{yb + 16}" text-anchor="middle">{esc(r[0])}</text>')
+        out.append(f'<text class="{cl}" x="{cx(i, m):.1f}" y="{yb + 29}" text-anchor="middle">{esc(r[1])}</text>')
         if valores[i]:
-            out.append(f'<text class="vl" x="{cx(i):.1f}" y="{yb + 47}" text-anchor="middle">{esc(valores[i])}</text>')
+            out.append(f'<text class="vl" x="{cx(i, m):.1f}" y="{yb + 47}" text-anchor="middle">{esc(valores[i])}</text>')
     return "".join(out)
 
 
 def zonas(h, tips):
-    """Retângulos invisíveis, um por dia, que mostram o balão ao passar o mouse."""
-    s = slot()
+    """Retângulos invisíveis, um por coluna, que mostram o balão ao passar o mouse."""
+    m = len(tips)
     return "".join(
-        f'<rect class="hit" x="{PL + s * i:.1f}" y="{PT}" width="{s:.1f}" '
+        f'<rect class="hit" x="{PL + slot(m) * i:.1f}" y="{PT}" width="{slot(m):.1f}" '
         f'height="{h - PT - 2}" data-tip="{esc(t)}"/>' for i, t in enumerate(tips))
 
 
@@ -159,11 +189,12 @@ def graf_anel(acts, ini_sem, fim_sem):
         leg.append('<li class="mut">Nenhuma atividade nesta semana.</li>')
     anel = (f'<svg class="anel" viewBox="0 0 260 260" role="img" '
             f'aria-label="Tempo por esporte na semana">{"".join(corpo)}</svg>')
-    return (f'<div class="anelbox">{anel}<ul class="leg">{"".join(leg)}</ul></div>')
+    return f'<div class="anelbox">{anel}<ul class="leg">{"".join(leg)}</ul></div>'
 
 
 # ------------------------------------------------ gráfico: treino por dia ---
 def graf_treino(dias, acts, hoje):
+    m = len(dias)
     por = {d.isoformat(): {} for d in dias}
     com_ativ = set()
     for a in acts:
@@ -180,47 +211,50 @@ def graf_treino(dias, acts, hoje):
     h = 320
     lo, hi, marcas = escala(0, max(max(totais) / 60, 30), 4)
     corpo, tips, valores, usados = [], [], [], set()
+    bw = larg_barra(m)
+    y_base = yv(0, lo, hi, h)
+    ordem = [x[0] for x in ESPORTES]
     for i, d in enumerate(dias):
         k = d.isoformat()
         segs = [(g_, por[k][g_]) for g_, _, _ in ESPORTES if g_ in por[k] and por[k][g_]["dur"] > 0]
-        bw = slot() * 0.56
-        y_base = yv(0, lo, hi, h)
         acc = 0.0
         for j, (g_, e) in enumerate(segs):
             usados.add(g_)
-            alt = e["dur"] / 60 / (hi - lo) * (h - PT - PB)
-            topo = j == len(segs) - 1
-            corpo.append(f'<path d="{barra(cx(i) - bw / 2, y_base - acc - alt, bw, alt, topo)}" '
-                         f'fill="{cor_esporte(g_)}" stroke="#120d1c" stroke-width="1.5"/>')
+            alt = altura(e["dur"] / 60, lo, hi, h)
+            corpo.append(f'<path class="sep" d="{barra(cx(i, m) - bw / 2, y_base - acc - alt, bw, alt, j == len(segs) - 1)}" '
+                         f'fill="{cor_esporte(g_)}"/>')
             acc += alt
         if k not in com_ativ:
-            corpo.append(f'<text class="desc" transform="translate({cx(i) + 4:.1f},{y_base - 8:.1f}) rotate(-90)">descanso</text>')
+            corpo.append(f'<text class="desc" transform="translate({cx(i, m) + 4:.1f},{y_base - 8:.1f}) rotate(-90)">descanso</text>')
             tips.append(tip(data_br(k), "descanso"))
             valores.append("")
         else:
             linhas = [f"{rotulo_esporte(g_)}|{minutos(e['dur']) if e['tem'] else SEM_DADO}"
                       + (f" · {km(e['dist'])}" if e["dist"] else "")
-                      for g_, e in sorted(por[k].items(), key=lambda kv: [x[0] for x in ESPORTES].index(kv[0]))]
+                      for g_, e in sorted(por[k].items(), key=lambda kv: ordem.index(kv[0]))]
             tips.append(tip(data_br(k), *linhas, f"Total|{minutos(totais[i]) if totais[i] else SEM_DADO}"))
             valores.append(f"{round(totais[i] / 60)} min" if totais[i] else "")
     leg = "".join(chip(cor_esporte(g_), rotulo_esporte(g_)) for g_, _, _ in ESPORTES if g_ in usados)
-    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", dias, hoje, valores)
+    if m > 16:
+        valores = [""] * m
+    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", rotulos_dias(dias, hoje), valores)
     return (f'<div class="legrow">{leg}<span class="mut">minutos de treino por dia</span></div>'
             + svg(h, base + "".join(corpo) + zonas(h, tips), "Tempo de treino por dia, colorido por esporte"))
 
 
 # ------------------------------------------------------- gráfico: sono ------
 def graf_sono(dias, todos, hoje):
+    m = len(dias)
     por = {d["data"]: d for d in todos}
     noites = [por.get(d.isoformat(), {}) for d in dias]
     if not any(n.get("sono_s") for n in noites):
         return None
     totais = [n.get("sono_s") for n in noites]
     h = 320
-    vmax = max(t for t in totais if t) / 3600
-    lo, hi, marcas = escala(0, vmax, 4, mults=(1, 2, 5, 10))
+    lo, hi, marcas = escala(0, max(t for t in totais if t) / 3600, 4, mults=(1, 2, 5, 10))
     corpo, tips, valores = [], [], []
-    bw = slot() * 0.56
+    bw = larg_barra(m)
+    y_base = yv(0, lo, hi, h)
     for i, d in enumerate(dias):
         n, k = noites[i], d.isoformat()
         if not n.get("sono_s"):
@@ -228,33 +262,32 @@ def graf_sono(dias, todos, hoje):
             valores.append("")
             continue
         fases = [(c_, n.get(f"sono_{c_}_s")) for c_ in ("prof", "leve", "rem")]
-        y_base = yv(0, lo, hi, h)
-        acc = 0.0
         presentes = [(c_, v) for c_, v in fases if v]
+        acc = 0.0
         if not presentes:
-            alt = n["sono_s"] / 3600 / (hi - lo) * (h - PT - PB)
-            corpo.append(f'<path d="{barra(cx(i) - bw / 2, y_base - alt, bw, alt)}" fill="{SONO_SEM_FASES}"/>')
+            alt = altura(n["sono_s"] / 3600, lo, hi, h)
+            corpo.append(f'<path d="{barra(cx(i, m) - bw / 2, y_base - alt, bw, alt)}" fill="{SONO_SEM_FASES}"/>')
         for j, (c_, v) in enumerate(presentes):
-            alt = v / 3600 / (hi - lo) * (h - PT - PB)
-            corpo.append(f'<path d="{barra(cx(i) - bw / 2, y_base - acc - alt, bw, alt, j == len(presentes) - 1)}" '
-                         f'fill="{SONO[c_][1]}" stroke="#120d1c" stroke-width="1.5"/>')
+            alt = altura(v / 3600, lo, hi, h)
+            corpo.append(f'<path class="sep" d="{barra(cx(i, m) - bw / 2, y_base - acc - alt, bw, alt, j == len(presentes) - 1)}" '
+                         f'fill="{SONO[c_][1]}"/>')
             acc += alt
-        linhas = [f"{SONO[c_][0]}|{hm(v) if v else SEM_DADO}" for c_, v in fases]
-        tips.append(tip(data_br(k), *linhas, f"Total|{hm(n['sono_s'])}"))
+        tips.append(tip(data_br(k), *[f"{SONO[c_][0]}|{hm(v) if v else SEM_DADO}" for c_, v in fases],
+                        f"Total|{hm(n['sono_s'])}"))
         valores.append(hcurto(n["sono_s"]))
     # média da semana (segunda a domingo), com todas as noites da semana
-    semanas, linhas_media = {}, []
+    semanas = {}
     for d in todos:
         if d.get("sono_s"):
             semanas.setdefault(segunda(dt.date.fromisoformat(d["data"])), []).append(d["sono_s"])
-    resumo = []
+    linhas_media, resumo = [], []
     for ini_s in sorted(semanas):
         idx = [i for i, d in enumerate(dias) if segunda(d) == ini_s]
         if not idx:
             continue
         media = sum(semanas[ini_s]) / len(semanas[ini_s])
         y = yv(media / 3600, lo, hi, h)
-        x1, x2 = PL + slot() * idx[0] + 4, PL + slot() * (idx[-1] + 1) - 4
+        x1, x2 = PL + slot(m) * idx[0] + 3, PL + slot(m) * (idx[-1] + 1) - 3
         linhas_media.append(f'<line class="avg" x1="{x1:.1f}" x2="{x2:.1f}" y1="{y:.1f}" y2="{y:.1f}"/>')
         fim_s = ini_s + dt.timedelta(days=6)
         resumo.append(f'<li><i class="trac"></i>Semana {ini_s.day:02d}/{ini_s.month:02d} a '
@@ -262,7 +295,9 @@ def graf_sono(dias, todos, hoje):
                       f'<span class="mut">({len(semanas[ini_s])} noites com dado)</span></li>')
     leg = "".join(chip(c_, n_) for n_, c_ in SONO.values()) + \
         '<span class="chip"><i class="trac"></i>média da semana</span>'
-    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}h", dias, hoje, valores)
+    if m > 16:
+        valores = [""] * m
+    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}h", rotulos_dias(dias, hoje), valores)
     return (f'<div class="legrow">{leg}</div>'
             + svg(h, base + "".join(corpo) + "".join(linhas_media) + zonas(h, tips),
                   "Sono por noite: profundo, leve e REM")
@@ -271,6 +306,7 @@ def graf_sono(dias, todos, hoje):
 
 # ------------------------------------------------------ gráfico: passos -----
 def graf_passos(dias, todos, hoje):
+    m = len(dias)
     por = {d["data"]: d for d in todos}
     reg = [por.get(d.isoformat(), {}) for d in dias]
     if not any(r.get("passos") for r in reg):
@@ -279,30 +315,30 @@ def graf_passos(dias, todos, hoje):
     topo = max([r.get("passos") or 0 for r in reg] + [r.get("meta_passos") or 0 for r in reg])
     lo, hi, marcas = escala(0, topo, 4)
     corpo, tips, valores = [], [], []
-    bw = slot() * 0.56
+    bw = larg_barra(m)
+    y0 = yv(0, lo, hi, h)
     tem_meta = False
     for i, d in enumerate(dias):
         r, k = reg[i], d.isoformat()
-        p, m = r.get("passos"), r.get("meta_passos")
-        y0 = yv(0, lo, hi, h)
+        p, mt = r.get("passos"), r.get("meta_passos")
         if p:
-            alt = p / (hi - lo) * (h - PT - PB)
-            corpo.append(f'<path d="{barra(cx(i) - bw / 2, y0 - alt, bw, alt)}" fill="{ROXO}"/>')
-        if m:
+            corpo.append(f'<path d="{barra(cx(i, m) - bw / 2, y0 - altura(p, lo, hi, h), bw, altura(p, lo, hi, h))}" fill="{ROXO}"/>')
+        if mt:
             tem_meta = True
-            y = yv(m, lo, hi, h)
-            corpo.append(f'<line class="meta" x1="{cx(i) - bw / 2 - 6:.1f}" x2="{cx(i) + bw / 2 + 6:.1f}" y1="{y:.1f}" y2="{y:.1f}"/>')
-        linhas = [f"Passos|{num(p) if p else SEM_DADO}", f"Meta da Garmin|{num(m) if m else SEM_DADO}"]
-        tips.append(tip(data_br(k), *linhas))
-        valores.append(num(p) if p else "")
+            y = yv(mt, lo, hi, h)
+            corpo.append(f'<line class="meta" x1="{cx(i, m) - bw / 2 - 5:.1f}" x2="{cx(i, m) + bw / 2 + 5:.1f}" y1="{y:.1f}" y2="{y:.1f}"/>')
+        tips.append(tip(data_br(k), f"Passos|{num(p) if p else SEM_DADO}",
+                        f"Meta da Garmin|{num(mt) if mt else SEM_DADO}"))
+        valores.append(num(p) if p and m <= 16 else "")
     leg = chip(ROXO, "passos") + (
         '<span class="chip"><i class="traco"></i>meta da Garmin</span>' if tem_meta else "")
-    base = moldura(h, lo, hi, marcas, lambda t: num(t), dias, hoje, valores)
+    base = moldura(h, lo, hi, marcas, lambda t: num(t), rotulos_dias(dias, hoje), valores)
     return f'<div class="legrow">{leg}</div>' + svg(h, base + "".join(corpo) + zonas(h, tips), "Passos por dia e meta")
 
 
 # ------------------------------------------------- gráfico: body battery ----
 def graf_bb(dias, todos, hoje):
+    m = len(dias)
     por = {d["data"]: d for d in todos}
     reg = [por.get(d.isoformat(), {}) for d in dias]
     if not any(r.get("bb_min") is not None and r.get("bb_max") is not None for r in reg):
@@ -310,7 +346,7 @@ def graf_bb(dias, todos, hoje):
     h = 300
     lo, hi, marcas = 0, 100, [0, 25, 50, 75, 100]
     corpo, tips, valores = [], [], []
-    bw = slot() * 0.44
+    bw = larg_barra(m, 0.44)
     for i, d in enumerate(dias):
         r, k = reg[i], d.isoformat()
         a, b = r.get("bb_min"), r.get("bb_max")
@@ -319,18 +355,19 @@ def graf_bb(dias, todos, hoje):
             valores.append("")
             continue
         y1, y2 = yv(b, lo, hi, h), yv(a, lo, hi, h)
-        corpo.append(f'<rect x="{cx(i) - bw / 2:.1f}" y="{y1:.1f}" width="{bw:.1f}" '
+        corpo.append(f'<rect x="{cx(i, m) - bw / 2:.1f}" y="{y1:.1f}" width="{bw:.1f}" '
                      f'height="{max(y2 - y1, 5):.1f}" rx="{min(7, bw / 2):.1f}" fill="url(#gbb)"/>')
         tips.append(tip(data_br(k), f"Máximo|{b}", f"Mínimo|{a}"))
-        valores.append(f"{a}–{b}")
+        valores.append(f"{a}–{b}" if m <= 16 else "")
     defs = (f'<linearGradient id="gbb" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="{ROXO_CLARO}"/><stop offset="1" stop-color="{ROXO}"/></linearGradient>')
-    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", dias, hoje, valores)
+    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", rotulos_dias(dias, hoje), valores)
     return svg(h, base + "".join(corpo) + zonas(h, tips), "Body Battery: mínimo e máximo de cada dia", defs)
 
 
 # ----------------------------------------------- gráficos de linha ---------
 def graf_linha(dias, todos, hoje, campo, unidade, nome):
+    m = len(dias)
     por = {d["data"]: d for d in todos}
     vals = [por.get(d.isoformat(), {}).get(campo) for d in dias]
     if not any(v is not None for v in vals):
@@ -341,7 +378,7 @@ def graf_linha(dias, todos, hoje, campo, unidade, nome):
     pad = max((vmax - vmin) * 0.3, 4)
     lo, hi, marcas = escala(vmin - pad, vmax + pad, 4)
     corpo, tips, valores = [], [], []
-    pontos = [(cx(i), yv(v, lo, hi, h)) if v is not None else None for i, v in enumerate(vals)]
+    pontos = [(cx(i, m), yv(v, lo, hi, h)) if v is not None else None for i, v in enumerate(vals)]
     trecho = []
     for p in pontos + [None]:
         if p is not None:
@@ -357,26 +394,122 @@ def graf_linha(dias, todos, hoje, campo, unidade, nome):
             tips.append(tip(data_br(k), f"{nome}|sem dado"))
             valores.append("")
         else:
-            corpo.append(f'<circle cx="{p[0]:.1f}" cy="{p[1]:.1f}" r="5" fill="{ROXO_CLARO}" stroke="#120d1c" stroke-width="2"/>')
+            corpo.append(f'<circle class="sep" cx="{p[0]:.1f}" cy="{p[1]:.1f}" r="5" fill="{ROXO_CLARO}"/>')
             tips.append(tip(data_br(k), f"{nome}|{num(vals[i])} {unidade}"))
-            valores.append(num(vals[i]))
-    base = moldura(h, lo, hi, marcas, lambda t: num(t), dias, hoje, valores)
+            valores.append(num(vals[i]) if m <= 16 else "")
+    base = moldura(h, lo, hi, marcas, lambda t: num(t), rotulos_dias(dias, hoje), valores)
     return svg(h, base + "".join(corpo) + zonas(h, tips), f"{nome} por dia")
 
 
-# --------------------------------------------------------------- tabelas ----
-def tabela(cabecalho, linhas, esq=(0,)):
-    """esq: índices das colunas de texto, alinhadas à esquerda."""
-    h = "".join(f'<th class="{"e" if i in esq else ""}">{esc(x)}</th>'
-                for i, x in enumerate(cabecalho))
+# ------------------------------------------- gráficos por semana (novos) ---
+def semanas_lista(ini, hoje):
+    s, out = segunda(hoje), []
+    while s >= segunda(ini) and len(out) < MAX_SEMANAS:
+        out.append(s)
+        s -= dt.timedelta(days=7)
+    return list(reversed(out))
 
-    def cel(i, x):
-        t = esc(x)
-        cl = ("e " if i in esq else "") + ("sd" if x == SEM_DADO else "")
-        return f'<td class="{cl.strip()}">{t}</td>'
-    corpo = "".join("<tr>" + "".join(cel(i, x) for i, x in enumerate(l)) + "</tr>"
-                    for l in linhas)
-    return f'<div class="tw"><table><tr>{h}</tr>{corpo}</table></div>'
+
+def _rot_sem(semanas, hoje):
+    return [("sem", f"{s.day:02d}/{s.month:02d}", s == segunda(hoje)) for s in semanas]
+
+
+def graf_dist_semana(atividades, ini, hoje):
+    semanas = semanas_lista(ini, hoje)
+    tots = [totais_semana(atividades, s) for s in semanas]
+    if not any(t["n"] for t in tots):
+        return None
+    m, h = len(semanas), 300
+    lo, hi, marcas = escala(0, max(t["dist_m"] for t in tots) / 1000, 4)
+    corpo, tips, valores = [], [], []
+    bw = larg_barra(m, 0.5)
+    y0 = yv(0, lo, hi, h)
+    for i, t in enumerate(tots):
+        titulo = f"Semana {t['ini'].day:02d}/{t['ini'].month:02d} a {t['fim'].day:02d}/{t['fim'].month:02d}"
+        if t["n"]:
+            alt = altura(t["dist_m"] / 1000, lo, hi, h)
+            corpo.append(f'<path d="{barra(cx(i, m) - bw / 2, y0 - alt, bw, alt)}" fill="{cor_esporte("corrida")}"/>')
+            tips.append(tip(titulo, f"Distância|{km(t['dist_m'])}", f"Corridas|{t['n']}",
+                            f"Tempo|{hms(t['dur_s'])}", f"Pace médio|{pace(t['pace'])}"))
+            valores.append(f"{num(t['dist_m'] / 1000, 1)} km")
+        else:
+            tips.append(tip(titulo, "Corridas|0"))
+            valores.append("")
+    base = moldura(h, lo, hi, marcas, lambda t: num(t), _rot_sem(semanas, hoje), valores)
+    leg = chip(cor_esporte("corrida"), "distância de corrida") + \
+        '<span class="mut">quilômetros por semana (segunda a domingo); a semana em dourado ainda está em andamento</span>'
+    return (f'<div class="legrow">{leg}</div>'
+            + svg(h, base + "".join(corpo) + zonas(h, tips), "Distância de corrida por semana"))
+
+
+def graf_zonas_semana(atividades, ini, hoje):
+    semanas = semanas_lista(ini, hoje)
+    por = []
+    for s in semanas:
+        a, b = s.isoformat(), (s + dt.timedelta(days=6)).isoformat()
+        z = [0.0] * 5
+        tem = False
+        for x in atividades:
+            if x.get("zonas") and x["data"] and a <= x["data"] <= b:
+                tem = True
+                for k, v in enumerate(x["zonas"]):
+                    z[k] += v or 0
+        por.append(z if tem else None)
+    if not any(por):
+        return None
+    m, h = len(semanas), 300
+    totais = [sum(z) if z else 0 for z in por]
+    lo, hi, marcas = escala(0, max(max(totais) / 60, 30), 4)
+    corpo, tips, valores = [], [], []
+    bw = larg_barra(m, 0.5)
+    y0 = yv(0, lo, hi, h)
+    for i, s in enumerate(semanas):
+        titulo = f"Semana {s.day:02d}/{s.month:02d} a {(s + dt.timedelta(days=6)).day:02d}/{(s + dt.timedelta(days=6)).month:02d}"
+        z = por[i]
+        if not z:
+            tips.append(tip(titulo, "Zonas de FC|sem dado"))
+            valores.append("")
+            continue
+        acc = 0.0
+        usadas = [k for k in range(5) if z[k] > 0]
+        for j, k in enumerate(usadas):
+            alt = altura(z[k] / 60, lo, hi, h)
+            corpo.append(f'<path class="sep" d="{barra(cx(i, m) - bw / 2, y0 - acc - alt, bw, alt, j == len(usadas) - 1)}" fill="{ZONAS[k][1]}"/>')
+            acc += alt
+        tips.append(tip(titulo, *[f"{ZONAS[k][0]}|{hms(z[k])}" for k in range(5)],
+                        f"Total|{hms(sum(z))}"))
+        valores.append(f"{round(sum(z) / 60)} min")
+    base = moldura(h, lo, hi, marcas, lambda t: f"{t:g}", _rot_sem(semanas, hoje), valores)
+    leg = "".join(chip(c_, n_) for n_, c_ in ZONAS) + \
+        '<span class="mut">minutos por zona de FC, atividades com dado de zona</span>'
+    return (f'<div class="legrow">{leg}</div>'
+            + svg(h, base + "".join(corpo) + zonas(h, tips), "Tempo em cada zona de frequência cardíaca por semana"))
+
+
+# --------------------------------------------------------------- tabelas ----
+def _cel(i, x, esq):
+    ordem = ""
+    if isinstance(x, tuple):
+        x, ordem = x
+        ordem = f' data-v="{esc(ordem)}"'
+    cl = ("e " if i in esq else "") + ("sd" if x == SEM_DADO else "")
+    return f'<td class="{cl.strip()}"{ordem}>{esc(x)}</td>'
+
+
+def tabela(nome, cabecalho, linhas, esq=(0,), datas=None):
+    """Tabela ordenável (clique no título) com botão de exportar CSV.
+    Cada célula pode ser texto ou (texto, valor_para_ordenar)."""
+    h = "".join(f'<th class="ord{" e" if i in esq else ""}" tabindex="0" role="button" '
+                f'aria-label="Ordenar por {esc(x)}">{esc(x)}</th>'
+                for i, x in enumerate(cabecalho))
+    corpo = []
+    for n, l in enumerate(linhas):
+        d = f' data-d="{datas[n]}"' if datas and datas[n] else ""
+        corpo.append(f"<tr{d}>" + "".join(_cel(i, x, esq) for i, x in enumerate(l)) + "</tr>")
+    return (f'<div class="tb"><div class="barra"><button type="button" class="csv" '
+            f'data-nome="{esc(nome)}">Exportar CSV</button></div>'
+            f'<div class="tw"><table data-nome="{esc(nome)}"><thead><tr>{h}</tr></thead>'
+            f'<tbody>{"".join(corpo)}</tbody></table></div></div>')
 
 
 def intervalo(ini, fim):
@@ -386,9 +519,28 @@ def intervalo(ini, fim):
 def _min_dia(acts_por_dia, k):
     atv = acts_por_dia.get(k)
     if not atv:
-        return "descanso"
+        return ("descanso", 0)
     tot = [a["dur_s"] for a in atv if a["dur_s"] is not None]
-    return minutos(sum(tot)) if tot else SEM_DADO
+    return (minutos(sum(tot)), sum(tot)) if tot else (SEM_DADO, "")
+
+
+def _v(texto, valor):
+    """Célula com valor de ordenação; vazio se não há dado."""
+    return (texto, "" if valor is None or texto == SEM_DADO else valor)
+
+
+def melhores_esforcos(atividades):
+    """Melhor tempo por distância entre as corridas (números da Garmin)."""
+    linhas = []
+    for dist, rot in MELHORES:
+        cand = [(a["melhores"].get(dist), a) for a in atividades
+                if grupo(a["tipo"]) == "corrida" and (a.get("melhores") or {}).get(dist)]
+        if not cand:
+            continue
+        t, a = min(cand, key=lambda c_: c_[0])
+        linhas.append([rot, _v(hms(t), t), _v(pace(t / (dist / 1000)), t / (dist / 1000)),
+                       (data_br(a["data"]), a["data"] or "")])
+    return linhas
 
 
 def tabelas(dias, atividades, ini, hoje):
@@ -396,43 +548,59 @@ def tabelas(dias, atividades, ini, hoje):
     semanas, s = [], sem0
     while s >= segunda(ini):
         t = totais_semana(atividades, s)
-        semanas.append([intervalo(t["ini"], t["fim"]), t["n"], km(t["dist_m"]),
-                        hms(t["dur_s"]) if t["n"] else SEM_DADO, pace(t["pace"])])
+        semanas.append([(intervalo(t["ini"], t["fim"]), s.isoformat()), t["n"],
+                        _v(km(t["dist_m"]), t["dist_m"]),
+                        _v(hms(t["dur_s"]) if t["n"] else SEM_DADO, t["dur_s"]),
+                        _v(pace(t["pace"]), t["pace"])])
         s -= dt.timedelta(days=7)
-    linhas_at = []
+    linhas_at, datas_at = [], []
     for a in atividades:
         g_ = grupo(a["tipo"])
         com_pace = g_ in ("corrida", "caminhada")
-        linhas_at.append([data_br(a["data"]),
-                          rotulo_esporte(g_) if a["tipo"] else SEM_DADO,
-                          a["nome"] or SEM_DADO, km(a["dist_m"]), hms(a["dur_s"]),
-                          pace(pace_de_velocidade(a["vel_ms"])) if com_pace else SEM_DADO])
+        pc = pace_de_velocidade(a["vel_ms"]) if com_pace else None
+        linhas_at.append([
+            (data_br(a["data"]), f'{a["data"] or ""} {a.get("hora") or ""}'),
+            rotulo_esporte(g_) if a["tipo"] else SEM_DADO,
+            a["nome"] or SEM_DADO, _v(km(a["dist_m"]), a["dist_m"]),
+            _v(hms(a["dur_s"]), a["dur_s"]), _v(pace(pc), pc),
+            _v(f'{num(a["fc_media"])} bpm' if a.get("fc_media") else SEM_DADO, a.get("fc_media")),
+            _v(f'{num(a["cad"])} ppm' if a.get("cad") else SEM_DADO, a.get("cad")),
+            _v(f'{num(a["elev_m"])} m' if a.get("elev_m") is not None else SEM_DADO, a.get("elev_m")),
+            _v(num(a["vo2"]) if a.get("vo2") else SEM_DADO, a.get("vo2"))])
+        datas_at.append(a["data"])
     por_dia = {}
     for a in atividades:
         if a["data"]:
             por_dia.setdefault(a["data"], []).append(a)
-    linhas_d = []
+    linhas_d, datas_d = [], []
     for d in reversed(dias):
         def par(a, b, suf=""):
             return f"{d[a]}–{d[b]}{suf}" if d.get(a) is not None and d.get(b) is not None else SEM_DADO
-        sec = lambda k: hm(d.get(k)) if d.get(k) else SEM_DADO  # noqa: E731
+
+        def sec(k):
+            return _v(hm(d.get(k)) if d.get(k) else SEM_DADO, d.get(k))
         linhas_d.append([
-            data_br(d["data"]), num(d.get("passos")), num(d.get("meta_passos")),
+            (data_br(d["data"]), d["data"]), _v(num(d.get("passos")), d.get("passos")),
+            _v(num(d.get("meta_passos")), d.get("meta_passos")),
             _min_dia(por_dia, d["data"]),
-            hm(d.get("sono_s")) if d.get("sono_s") else SEM_DADO,
-            sec("sono_prof_s"), sec("sono_leve_s"), sec("sono_rem_s"),
-            f'{d["fc_repouso"]} bpm' if d.get("fc_repouso") else SEM_DADO,
-            f'{num(d["vfc"])} ms' if d.get("vfc") else SEM_DADO,
-            par("fc_min", "fc_max", " bpm"), num(d.get("estresse")),
-            par("bb_min", "bb_max"), num(d.get("intensidade")), num(d.get("calorias")),
-            num(d.get("respiracao")), num(d.get("spo2")), num(d.get("andares"))])
-    return semanas, linhas_at, linhas_d
+            sec("sono_s"), sec("sono_prof_s"), sec("sono_leve_s"), sec("sono_rem_s"),
+            _v(f'{d["fc_repouso"]} bpm' if d.get("fc_repouso") else SEM_DADO, d.get("fc_repouso")),
+            _v(f'{num(d["vfc"])} ms' if d.get("vfc") else SEM_DADO, d.get("vfc")),
+            par("fc_min", "fc_max", " bpm"), _v(num(d.get("estresse")), d.get("estresse")),
+            _v(par("bb_min", "bb_max"), d.get("bb_max")),
+            _v(num(d.get("intensidade")), d.get("intensidade")),
+            _v(num(d.get("calorias")), d.get("calorias")),
+            _v(num(d.get("respiracao")), d.get("respiracao")),
+            _v(num(d.get("spo2")), d.get("spo2")), _v(num(d.get("andares")), d.get("andares"))])
+        datas_d.append(d["data"])
+    return semanas, linhas_at, datas_at, linhas_d, datas_d
 
 
 # ---------------------------------------------------------------- página ----
 CSS = """
 :root{--bg:#0b0813;--card:rgba(26,19,42,.78);--bd:rgba(167,139,250,.2);
---tx:#ece8f8;--mut:#a79fc2;--ouro:#FFD23F;--roxo:#8B6CF4;--roxo2:#C4B5FD;
+--tx:#ece8f8;--mut:#a79fc2;--ouro:#FFD23F;--roxo:#8B6CF4;--roxo2:#C4B5FD;--sep:#120d1c;
+--grade:rgba(167,139,250,.14);
 --titulo:"Segoe UI Black","Arial Black","Verdana",sans-serif;
 --mono:"Courier New","Cascadia Mono",Consolas,monospace}
 *{box-sizing:border-box}
@@ -454,12 +622,21 @@ h2{font:900 1.02rem/1.2 var(--titulo);letter-spacing:.03em;margin:0 0 4px;text-t
 .kpi .v{font:700 2.3rem/1.15 var(--mono);color:var(--roxo2);font-variant-numeric:tabular-nums}
 .kpi.s .v{font-size:1.5rem;color:var(--tx)}
 .mut,.sd{color:var(--mut)}.sd{font-style:italic}
+.seletor{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:18px;color:var(--mut);font-size:.85rem}
+.seletor button,.csv{font:700 .8rem var(--mono);color:var(--tx);background:rgba(139,92,246,.12);
+border:1px solid var(--bd);border-radius:999px;padding:6px 14px;cursor:pointer}
+.seletor button:hover,.csv:hover{border-color:var(--roxo2)}
+.seletor button[aria-pressed=true]{background:var(--roxo);border-color:var(--roxo2)}
+button:focus-visible,th.ord:focus-visible{outline:2px solid var(--roxo2);outline-offset:2px}
+.per{display:none}
 .ch{width:100%;height:auto;display:block}
 .ch text,.anel text{font-family:var(--mono);fill:var(--mut);font-size:11px}
 .ch .xl.hoje{fill:var(--ouro);font-weight:700}.ch .vl{fill:var(--tx);font-weight:700;font-size:11px}
 .ch .desc{fill:var(--mut);letter-spacing:.08em}
 .anel .rg{font-size:26px;font-weight:700;fill:var(--tx)}.anel .rs{font-size:12px}
-.gl{stroke:rgba(167,139,250,.14);stroke-width:1}
+.gl{stroke:var(--grade);stroke-width:1}
+.sep{stroke:var(--sep);stroke-width:1.5}
+circle.sep{stroke-width:2}
 .avg{stroke:var(--ouro);stroke-width:2.5;stroke-dasharray:8 5}
 .meta{stroke:var(--ouro);stroke-width:3}
 .hit{fill:transparent}.hit:hover{fill:rgba(167,139,250,.1)}
@@ -478,11 +655,14 @@ i.trac{width:18px;height:0;border-top:3px dashed var(--ouro);display:inline-bloc
 .leg li{display:grid;grid-template-columns:18px 1fr auto 52px;gap:10px;align-items:center;
 padding:9px 0;border-bottom:1px solid var(--bd)}
 .leg li:last-child{border-bottom:0}.leg .n{font-family:var(--mono);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.barra{display:flex;justify-content:flex-end;margin:0 0 6px}
 .tw{overflow-x:auto;background:var(--card);border:1px solid var(--bd);border-radius:18px}
 table{border-collapse:collapse;width:100%;font-size:.88rem}
 th,td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--bd);
 font-family:var(--mono);font-variant-numeric:tabular-nums}
-th{color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;font-family:"Segoe UI",sans-serif}
+th{color:var(--mut);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+font-family:"Segoe UI",sans-serif;cursor:pointer;user-select:none}
+th.ord:hover{color:var(--tx)}th[data-ord=asc]::after{content:" ▲"}th[data-ord=desc]::after{content:" ▼"}
 th.e,td.e{text-align:left}tr:last-child td{border-bottom:0}
 h2.t{margin-top:30px}
 .nota{color:var(--mut);font-size:.8rem;margin-top:28px}
@@ -492,11 +672,20 @@ box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:.82rem}
 #tip .th{font:900 .8rem var(--titulo);text-transform:uppercase;margin-bottom:5px;color:var(--roxo2)}
 #tip .tr{display:flex;justify-content:space-between;gap:14px}
 #tip .tv{font-family:var(--mono);font-weight:700;text-align:right;white-space:nowrap}
+@media print{
+:root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
+--roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
+html,body{background:#fff!important;background-image:none!important}
+.seletor,.barra,#tip{display:none!important}
+.card,.kpi,.tw{break-inside:avoid;box-shadow:none}
+.tw{overflow:visible}main{max-width:none;padding:0}
+.ch .hit{display:none}
+}
 """
 
 JS = """
 (function(){
-var tip=document.getElementById('tip');
+var tip=document.getElementById('tip'),corpo=document.body;
 function pinta(el){
   var L=el.getAttribute('data-tip').split('\\n');tip.textContent='';
   L.forEach(function(l,i){var d=document.createElement('div');
@@ -520,6 +709,54 @@ function mover(e){var el=e.target.closest&&e.target.closest('[data-tip]');
 document.addEventListener('mousemove',mover);
 document.addEventListener('click',mover);
 document.addEventListener('mouseleave',function(){tip.style.display='none';atual=null;});
+
+// período dos gráficos e das tabelas diárias
+function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function periodo(n){
+  corpo.setAttribute('data-n',n);
+  document.querySelectorAll('.seletor button').forEach(function(b){
+    b.setAttribute('aria-pressed',b.getAttribute('data-n')===String(n)?'true':'false');});
+  var h=corpo.getAttribute('data-hoje').split('-'),f=new Date(+h[0],+h[1]-1,+h[2]);
+  f.setDate(f.getDate()-(n-1));var corte=iso(f);
+  document.querySelectorAll('tr[data-d]').forEach(function(tr){tr.hidden=tr.getAttribute('data-d')<corte;});
+  tip.style.display='none';
+}
+document.querySelectorAll('.seletor button').forEach(function(b){
+  b.addEventListener('click',function(){periodo(+b.getAttribute('data-n'));});});
+periodo(+corpo.getAttribute('data-n'));
+
+// ordenar tabelas
+function valor(td){var v=td.getAttribute('data-v');
+  if(v!==null){return v===''?null:(/^-?[0-9]+(\\.[0-9]+)?$/.test(v)?parseFloat(v):v);}
+  var t=td.textContent.trim();if(t===''||t==='sem dado')return null;
+  var n=parseFloat(t.replace(/\\./g,'').replace(',','.'));return isNaN(n)?t:n;}
+function ordenar(th){
+  var tab=th.closest('table'),i=[].indexOf.call(th.parentNode.children,th),
+      asc=th.getAttribute('data-ord')!=='asc',tb=tab.tBodies[0],
+      linhas=[].slice.call(tb.rows);
+  tab.querySelectorAll('th').forEach(function(x){x.removeAttribute('data-ord');});
+  th.setAttribute('data-ord',asc?'asc':'desc');
+  linhas.sort(function(a,b){var x=valor(a.cells[i]),y=valor(b.cells[i]);
+    if(x===null&&y===null)return 0;if(x===null)return 1;if(y===null)return -1;
+    var r=(typeof x==='number'&&typeof y==='number')?x-y:String(x).localeCompare(String(y),'pt-BR',{numeric:true});
+    return asc?r:-r;});
+  linhas.forEach(function(r){tb.appendChild(r);});
+}
+document.querySelectorAll('th.ord').forEach(function(th){
+  th.addEventListener('click',function(){ordenar(th);});
+  th.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();ordenar(th);}});});
+
+// exportar CSV (só as linhas visíveis; "sem dado" vira vazio)
+function csvCel(t){t=t.trim();if(t==='sem dado')t='';return '"'+t.replace(/"/g,'""')+'"';}
+document.querySelectorAll('button.csv').forEach(function(b){
+  b.addEventListener('click',function(){
+    var tab=b.closest('.tb').querySelector('table'),out=[];
+    [].forEach.call(tab.rows,function(tr){if(tr.hidden)return;
+      out.push([].map.call(tr.cells,function(td){return csvCel(td.textContent);}).join(';'));});
+    var blob=new Blob(['\\ufeff'+out.join('\\r\\n')],{type:'text/csv;charset=utf-8'}),
+        a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='painel-'+tab.getAttribute('data-nome')+'.csv';document.body.appendChild(a);
+    a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href);},1000);});});
 })();
 """
 
@@ -528,7 +765,9 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None):
     """Devolve (html, nomes_dos_gráficos_omitidos)."""
     hoje = fim
     sem0 = segunda(hoje)
-    jan = janela(fim)
+    disponiveis = (fim - ini).days + 1
+    opcoes = tuple(n for n in OPCOES if n <= disponiveis) or (PADRAO,)
+    padrao = PADRAO if PADRAO in opcoes else opcoes[-1]
     atual = totais_semana(atividades, sem0)
     kpis = (
         f'<div class="kpi"><div class="r">Distância total da semana</div>'
@@ -540,56 +779,89 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None):
         f'<div class="kpi s"><div class="r">Pace médio</div>'
         f'<div class="v">{esc(pace(atual["pace"]))}</div></div>')
 
-    sub14 = f"Últimos 14 dias ({intervalo(jan[0], jan[-1])}) · passe o mouse sobre um dia"
     omitidos, blocos = [], []
-
-    blocos.append(cartao(f"Tempo por esporte — semana atual",
+    blocos.append(cartao("Tempo por esporte — semana atual",
                          f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse sobre uma fatia",
                          graf_anel(atividades, sem0, sem0 + dt.timedelta(days=6))))
-    blocos.append(cartao("Treino por dia", sub14, graf_treino(jan, atividades, hoje)))
 
-    def opcional(nome, titulo, sub, conteudo):
+    def por_periodo(fn):
+        """Gera o gráfico para cada período; None se não há dado em nenhum."""
+        partes = {n: fn(janela(fim, n)) for n in opcoes}
+        if all(v is None for v in partes.values()):
+            return None
+        return "".join(
+            f'<div class="per" data-n="{n}">'
+            + (v if v is not None else f'<p class="sd">sem dado nos últimos {n} dias.</p>')
+            + "</div>" for n, v in partes.items())
+
+    def add(nome, titulo, sub, conteudo):
         if conteudo is None:
             omitidos.append(nome)
         else:
             blocos.append(cartao(titulo, sub, conteudo))
 
-    opcional("Sono", "Sono por noite — profundo, leve e REM", sub14, graf_sono(jan, dias, hoje))
-    opcional("Passos", "Passos por dia", sub14 + " · traço dourado = meta da Garmin", graf_passos(jan, dias, hoje))
-    opcional("Body Battery", "Body Battery — do mínimo ao máximo do dia", sub14, graf_bb(jan, dias, hoje))
-    opcional("FC de repouso", "Frequência cardíaca de repouso (bpm)", sub14,
-             graf_linha(jan, dias, hoje, "fc_repouso", "bpm", "FC de repouso"))
-    opcional("VFC", "VFC — média da noite (ms)", sub14,
-             graf_linha(jan, dias, hoje, "vfc", "ms", "VFC"))
+    sub = "passe o mouse sobre um dia · use o seletor de período acima"
+    add("Treino por dia", "Treino por dia", sub, por_periodo(lambda j: graf_treino(j, atividades, hoje)))
+    add("Sono", "Sono por noite — profundo, leve e REM", sub, por_periodo(lambda j: graf_sono(j, dias, hoje)))
+    add("Passos", "Passos por dia", sub + " · traço dourado = meta da Garmin",
+        por_periodo(lambda j: graf_passos(j, dias, hoje)))
+    add("Body Battery", "Body Battery — do mínimo ao máximo do dia", sub,
+        por_periodo(lambda j: graf_bb(j, dias, hoje)))
+    add("FC de repouso", "Frequência cardíaca de repouso (bpm)", sub,
+        por_periodo(lambda j: graf_linha(j, dias, hoje, "fc_repouso", "bpm", "FC de repouso")))
+    add("VFC", "VFC — média da noite (ms)", sub,
+        por_periodo(lambda j: graf_linha(j, dias, hoje, "vfc", "ms", "VFC")))
+    add("Distância por semana", "Distância de corrida por semana",
+        f"últimas {MAX_SEMANAS} semanas no máximo · passe o mouse sobre uma semana",
+        graf_dist_semana(atividades, ini, hoje))
+    add("Zonas de FC por semana", "Tempo por zona de frequência cardíaca",
+        "por semana · passe o mouse sobre uma semana", graf_zonas_semana(atividades, ini, hoje))
 
-    semanas, linhas_at, linhas_d = tabelas(dias, atividades, ini, hoje)
-    t_sem = tabela(["Semana", "Corridas", "Distância", "Tempo", "Pace médio"], semanas)
-    t_at = (tabela(["Data", "Esporte", "Nome", "Distância", "Duração", "Pace"], linhas_at, esq=(0, 1, 2))
+    semanas, linhas_at, datas_at, linhas_d, datas_d = tabelas(dias, atividades, ini, hoje)
+    melhores = melhores_esforcos(atividades)
+    t_sem = tabela("semanas", ["Semana", "Corridas", "Distância", "Tempo", "Pace médio"], semanas)
+    t_at = (tabela("atividades", ["Data", "Esporte", "Nome", "Distância", "Duração", "Pace",
+                                  "FC média", "Cadência", "Elevação", "VO2máx"],
+                   linhas_at, esq=(0, 1, 2), datas=datas_at)
             if linhas_at else '<p class="sd">sem dado: nenhuma atividade no período.</p>')
-    t_d = (tabela(["Dia", "Passos", "Meta passos", "Treino", "Sono", "Profundo", "Leve", "REM",
-                   "FC repouso", "VFC", "FC mín–máx", "Estresse médio", "Body Battery",
-                   "Min. intensidade", "Calorias", "Respiração", "SpO2", "Andares"], linhas_d)
+    t_mel = (tabela("melhores-esforcos", ["Distância", "Tempo", "Pace", "Dia"], melhores, esq=(0,))
+             if melhores else "")
+    t_d = (tabela("dados-diarios", ["Dia", "Passos", "Meta passos", "Treino", "Sono", "Profundo",
+                                    "Leve", "REM", "FC repouso", "VFC", "FC mín–máx",
+                                    "Estresse médio", "Body Battery", "Min. intensidade",
+                                    "Calorias", "Respiração", "SpO2", "Andares"],
+                  linhas_d, datas=datas_d)
            if linhas_d else '<p class="sd">sem dado: nenhum dia no período.</p>')
+    if not melhores:
+        omitidos.append("Melhores esforços")
 
     aviso_html = ""
     if omitidos or avisos:
-        itens = [f"Gráfico “{n}” omitido: a Garmin não enviou esse dado nos últimos 14 dias."
-                 for n in omitidos] + list(avisos or [])
+        itens = [f"“{n}” omitido: a Garmin não enviou esse dado no período." for n in omitidos] \
+            + list(avisos or [])
         aviso_html = '<p class="nota">' + " ".join(esc(i) for i in itens) + "</p>"
+
+    botoes = "".join(f'<button type="button" data-n="{n}" aria-pressed="{"true" if n == padrao else "false"}">{n} dias</button>'
+                     for n in opcoes)
+    regras = "".join(f'body[data-n="{n}"] .per[data-n="{n}"]{{display:block}}' for n in opcoes)
 
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Painel Garmin</title><style>{CSS}</style></head><body><main>
+<title>Painel Garmin</title><style>{CSS}{regras}</style></head>
+<body data-n="{padrao}" data-hoje="{hoje.isoformat()}"><main>
 <div class="top"><h1>Painel Garmin</h1>
 <p class="sub">Período: {ini.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')} ·
 atualizado em {agora.strftime('%d/%m/%Y %H:%M')}</p></div>
 
 <div class="grid">{kpis}</div>
+<div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
+<span>Período:</span>{botoes}</div>
 {"".join(blocos)}
 
 <h2 class="t">Semanas — corridas (segunda a domingo)</h2>{t_sem}
 <h2 class="t">Atividades</h2>{t_at}
+{('<h2 class="t">Melhores esforços — corridas no período</h2>' + t_mel) if t_mel else ""}
 <h2 class="t">Dados diários</h2>{t_d}
 {aviso_html}
 <p class="nota">Todos os números vêm da Garmin Connect Personal API. “sem dado” (ou espaço
@@ -597,5 +869,7 @@ vazio nos gráficos) = a Garmin não enviou esse valor; nunca é preenchido com 
 que a Garmin envia 0 passos, 0 calorias ou 0 de FC de repouso aparecem como sem dado. O sono
 aparece na data em que você acordou. A média semanal do sono usa todas as noites com dado
 da semana (segunda a domingo). Pace e porcentagens são contas feitas com a distância e o
-tempo enviados pela Garmin. “Descanso” = nenhuma atividade registrada naquele dia.</p>
+tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
+registrou para cada distância dentro de uma corrida. “Descanso” = nenhuma atividade
+registrada naquele dia. Clique no título de uma coluna para ordenar.</p>
 </main><div id="tip"></div><script>{JS}</script></body></html>""", omitidos

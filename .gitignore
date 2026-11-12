@@ -2,3 +2,6 @@ painel.html
 __pycache__/
 *.pyc
 tests/saida/
+dados_brutos.json
+dados_brutos.json.tmp
+ultimo_log.txt

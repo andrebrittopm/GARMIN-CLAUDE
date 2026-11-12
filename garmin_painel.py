@@ -5,21 +5,26 @@
   chave pessoal por um token temporário (endpoint oficial de token).
 - A chave é lida do cofre do sistema (Gerenciador de Credenciais do Windows
   ou Chaves do Mac) na hora de usar. Nunca é impressa nem gravada em arquivo.
-- O token fica só na memória e some quando o programa termina.
+- O token (vale 24 h) fica na memória e, no Windows, também no cofre
+  (garmin-personal-api-token) para ser reaproveitado. Nunca vai para arquivo.
+- Os dados brutos ficam em dados_brutos.json (sem chave/token), só neste
+  computador: as próximas execuções buscam só o que é novo.
 - Nenhuma biblioteca de terceiros: só a biblioteca padrão do Python.
 
 Uso:
     python garmin_painel.py --teste            # testa com 1 dia (ontem)
-    python garmin_painel.py --teste --data 2026-11-10
-    python garmin_painel.py                    # gera painel.html (30 dias)
-    python garmin_painel.py --dias 60
+    python garmin_painel.py                    # atualiza e gera painel.html
+    python garmin_painel.py --so-visual        # redesenha SEM consultar a Garmin
+    python garmin_painel.py --dias 60          # período maior (padrão 30)
+    python garmin_painel.py --sem-abrir        # não abre o navegador
+    python garmin_painel.py --esquecer-token   # apaga o token guardado no cofre
 """
 import argparse
+import base64
 import datetime as dt
-import html
+import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
 import urllib.error
@@ -28,82 +33,44 @@ import urllib.request
 import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import armazem  # noqa: E402
+from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
+                   ler_chave, ler_token_cache)
 from formatos import (SEM_DADO, hms, km, pace, pace_de_velocidade,  # noqa: E402
                       segunda)
 from visual import pagina  # noqa: E402
 
 BASE = "https://personal.connectapi.garmin.com"
 TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
-NOME_CHAVE = "garmin-personal-api-key"
 UA = "painel-pessoal/1.0"
 PASTA = os.path.dirname(os.path.abspath(__file__))
+PAGINA_ATIVIDADES = 20      # respostas grandes podem falhar: páginas pequenas
+FOLGA_TOKEN_S = 3600        # só reaproveita token com mais de 1 h de validade
 
 
 class Erro(Exception):
     """Erro com mensagem segura (nunca contém chave nem token)."""
 
 
-# ---------------------------------------------------------------- chave ----
-def ler_chave():
-    """Lê a chave do cofre do sistema. Devolve texto; nunca imprime."""
-    if sys.platform == "win32":
-        return _ler_chave_windows()
-    if sys.platform == "darwin":
-        r = subprocess.run(
-            ["security", "find-generic-password", "-s", NOME_CHAVE, "-w"],
-            capture_output=True, text=True)
-        if r.returncode != 0 or not r.stdout.strip():
-            raise Erro("Não achei a chave nas Chaves do Mac "
-                       f"(nome '{NOME_CHAVE}').")
-        return r.stdout.strip()
-    raise Erro("Sistema não suportado: use Windows ou Mac.")
-
-
-def _ler_chave_windows():
-    import ctypes
-    from ctypes import wintypes
-
-    class FILETIME(ctypes.Structure):
-        _fields_ = [("lo", wintypes.DWORD), ("hi", wintypes.DWORD)]
-
-    class CREDENTIAL(ctypes.Structure):
-        _fields_ = [
-            ("Flags", wintypes.DWORD), ("Type", wintypes.DWORD),
-            ("TargetName", wintypes.LPWSTR), ("Comment", wintypes.LPWSTR),
-            ("LastWritten", FILETIME),
-            ("CredentialBlobSize", wintypes.DWORD),
-            ("CredentialBlob", ctypes.POINTER(ctypes.c_ubyte)),
-            ("Persist", wintypes.DWORD), ("AttributeCount", wintypes.DWORD),
-            ("Attributes", ctypes.c_void_p),
-            ("TargetAlias", wintypes.LPWSTR), ("UserName", wintypes.LPWSTR),
-        ]
-
-    adv = ctypes.WinDLL("advapi32", use_last_error=True)
-    adv.CredReadW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
-                              wintypes.DWORD,
-                              ctypes.POINTER(ctypes.POINTER(CREDENTIAL))]
-    adv.CredReadW.restype = wintypes.BOOL
-    adv.CredFree.argtypes = [ctypes.c_void_p]
-
-    ptr = ctypes.POINTER(CREDENTIAL)()
-    if not adv.CredReadW(NOME_CHAVE, 1, 0, ctypes.byref(ptr)):
-        raise Erro("Não achei a chave no Gerenciador de Credenciais "
-                   f"(nome '{NOME_CHAVE}'). Refaça o passo de guardar a chave.")
-    try:
-        c = ptr.contents
-        bruto = ctypes.string_at(c.CredentialBlob, c.CredentialBlobSize)
-        return bruto.decode("utf-16-le").strip()
-    finally:
-        adv.CredFree(ptr)
-
-
 # -------------------------------------------------------------- cliente ----
+def _exp_do_token(token):
+    """Validade (epoch) lida do próprio token, ou None. Não mostra nada."""
+    try:
+        parte = token.split(".")[1]
+        parte += "=" * (-len(parte) % 4)
+        return float(json.loads(base64.urlsafe_b64decode(parte))["exp"])
+    except Exception:
+        return None
+
+
 class Cliente:
     """Fala com a Garmin. Só faz GET nos dados; POST só para o token."""
 
     def __init__(self, chave):
         self._chave = chave
         self._token = None
+        self._id = hashlib.sha256(chave.encode()).hexdigest()[:16]
+        self._cache_tentado = False
 
     def _abrir(self, req):
         try:
@@ -123,9 +90,24 @@ class Cliente:
             raise Erro("Sem conexão com a Garmin: "
                        f"{type(e.reason).__name__}.") from None
 
+    def _token_do_cache(self):
+        bruto = ler_token_cache()
+        if not bruto or "|" not in bruto:
+            return None
+        cid, tok = bruto.split("|", 1)
+        exp = _exp_do_token(tok)
+        if cid != self._id or exp is None or exp - time.time() < FOLGA_TOKEN_S:
+            return None
+        return tok
+
     def _novo_token(self):
+        if not self._cache_tentado:
+            self._cache_tentado = True
+            self._token = self._token_do_cache()
+            if self._token:
+                return
         req = urllib.request.Request(
-            BASE + TOKEN_PATH, data=b"", method="POST",
+            TOKEN_URL(), data=b"", method="POST",
             headers={"Authorization": "ApiKey " + self._chave,
                      "User-Agent": UA})
         corpo = self._abrir(req).decode("utf-8", "replace").strip()
@@ -147,6 +129,9 @@ class Cliente:
         if not token:
             raise Erro("A Garmin não devolveu um token.")
         self._token = token
+        exp = _exp_do_token(token)
+        if exp and exp - time.time() > FOLGA_TOKEN_S:
+            gravar_token_cache(f"{self._id}|{token}")
 
     def get(self, caminho, params=None):
         """GET autenticado. Devolve o JSON já convertido."""
@@ -166,13 +151,19 @@ class Cliente:
             except Erro as e:
                 msg = str(e)
                 if "401" in msg and tentativa == 0:
-                    self._token = None      # token pode ter vencido: renova
+                    self._token = None      # token vencido/revogado: renova
+                    self._cache_tentado = True
+                    apagar_token_cache()
                     continue
                 if ("429" in msg or "respondeu 5" in msg) and tentativa < 3:
                     time.sleep(3 * (tentativa + 1))
                     continue
                 raise
         raise Erro("Não consegui concluir o pedido.")
+
+
+def TOKEN_URL():
+    return BASE + TOKEN_PATH
 
 
 # ---------------------------------------------------------------- dados ----
@@ -236,11 +227,11 @@ def buscar_atividades(c, ini, fim):
         lote = _lista(c.get("/activitylist-service/activities/search/activities",
                             {"startDate": ini.isoformat(),
                              "endDate": fim.isoformat(),
-                             "start": inicio, "limit": 99}))
+                             "start": inicio, "limit": PAGINA_ATIVIDADES}))
         out += lote
-        if len(lote) < 99:
+        if len(lote) < PAGINA_ATIVIDADES:
             return out
-        inicio += 99
+        inicio += PAGINA_ATIVIDADES
         time.sleep(0.3)
 
 
@@ -312,42 +303,41 @@ def montar_dias(resumos, sonos, vfc=None):
     return [dias[k] for k in sorted(dias)]
 
 
+MELHORES = [(1000, "1 km"), (1609, "1 milha"), (5000, "5 km"),
+            (10000, "10 km"), (21098, "Meia maratona")]
+
+
 def montar_atividades(brutas):
     out = []
     for a in brutas:
-        tipo = g(a, "activityType", "typeKey")
+        zonas = [_pos(g(a, f"hrTimeInZone_{z}")) for z in range(1, 6)]
         out.append({
             "id": g(a, "activityId"),
             "data": (g(a, "startTimeLocal") or "")[:10] or None,
             "hora": (g(a, "startTimeLocal") or "")[11:16] or None,
-            "tipo": tipo,
+            "tipo": g(a, "activityType", "typeKey"),
             "nome": g(a, "activityName"),
             "dist_m": g(a, "distance"),
             "dur_s": g(a, "duration"),
             "vel_ms": g(a, "averageSpeed"),
+            "fc_media": _maior0(g(a, "averageHR")),
+            "cad": _maior0(g(a, "averageRunningCadenceInStepsPerMinute")),
+            "elev_m": _pos(g(a, "elevationGain")),
+            "vo2": _maior0(g(a, "vO2MaxValue")),
+            "zonas": zonas if any(z for z in zonas) else None,
+            "melhores": {m: _maior0(g(a, f"fastestSplit_{m}")) for m, _ in MELHORES},
         })
     out.sort(key=lambda x: (x["data"] or "", x["hora"] or ""), reverse=True)
     return out
 
 
+# ----------------------------------------------------------------- modos ---
 def modo_teste(cli, dia):
     print(f"Teste com 1 dia: {dia.isoformat()}")
     resumos = buscar_resumos(cli, dia, dia)
     sonos = buscar_sono(cli, dia, dia)
     ativ = buscar_atividades(cli, dia, dia)
     d = montar_dias(resumos, sonos)
-    print("- Registro(s) de sono, como a Garmin enviou (campo: valor):")
-    for r in sonos:
-        if not isinstance(r, dict):
-            print(f"    (formato inesperado: {type(r).__name__})")
-            continue
-        for k, v in r.items():
-            if isinstance(v, (dict, list)):
-                print(f"    {k}: [{type(v).__name__} com {len(v)} item(ns)]")
-            elif v is not None:
-                print(f"    {k}: {v}")
-            else:
-                print(f"    {k}: (vazio)")
     print(f"- Resumo diário: {len(resumos)} registro(s)")
     print(f"- Sono: {len(sonos)} registro(s)")
     print(f"- Atividades: {len(ativ)}")
@@ -361,38 +351,53 @@ def modo_teste(cli, dia):
     print("Teste concluído. Nenhuma chave nem token foi mostrado ou salvo.")
 
 
-def modo_painel(cli, dias, abrir):
-    fim = dt.date.today()
-    ini = fim - dt.timedelta(days=max(dias, 14) - 1)
-    # começa na segunda-feira para a primeira semana ficar completa
-    ini = segunda(ini)
-    print(f"Buscando de {ini} a {fim} ...")
-    resumos = buscar_resumos(cli, ini, fim)
-    print(f"- resumos diários: {len(resumos)}")
-    sonos = buscar_sono(cli, ini, fim)
-    print(f"- registros de sono: {len(sonos)}")
+def caminho_armazem():
+    return os.path.join(PASTA, "dados_brutos.json")
+
+
+def atualizar_armazem(cli, dados, hoje, ini):
+    """Busca na Garmin só o que falta e guarda. Devolve a lista de avisos."""
     avisos = []
-    try:
-        vfc = buscar_vfc(cli, ini, fim)
-    except Erro as e:
-        vfc = {}
-        avisos.append(f"VFC não pôde ser lida ({e})")
-    print(f"- dias com VFC: {len(vfc)}")
-    ativ = montar_atividades(buscar_atividades(cli, ini, fim))
-    print(f"- atividades: {len(ativ)}")
-    pag, omitidos = pagina(montar_dias(resumos, sonos, vfc), ativ, ini, fim,
-                           dt.datetime.now(), avisos)
+    for jan in armazem.planejar(dados, hoje, ini):
+        print(f"Buscando de {jan[0]} a {jan[1]} ...")
+        resumos = buscar_resumos(cli, *jan)
+        sonos = buscar_sono(cli, *jan)
+        try:
+            vfc = buscar_vfc(cli, *jan)
+        except Erro as e:
+            vfc = {}
+            avisos.append(f"VFC não pôde ser lida ({e})")
+        ativ = buscar_atividades(cli, *jan)
+        armazem.mesclar(dados, jan, resumos, sonos, vfc, ativ)
+        print(f"- resumos: {len(resumos)} · sono: {len(sonos)} · "
+              f"VFC: {len(vfc)} · atividades: {len(ativ)}")
+    armazem.fechar(dados, hoje, ini)
+    armazem.salvar(caminho_armazem(), dados)
+    return avisos
+
+
+def gerar(dados, hoje, ini, agora, avisos, abrir):
+    resumos, sonos, vfc, brutas = armazem.recorte(dados, ini, hoje)
+    ativ = montar_atividades(brutas)
+    pag, omitidos = pagina(montar_dias(resumos, sonos, vfc), ativ, ini, hoje,
+                           agora, avisos)
     caminho = os.path.join(PASTA, "painel.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(pag)
     print(f"Painel gerado: {caminho}")
     for nome in omitidos:
-        print(f"AVISO: gráfico '{nome}' não aparece: sem dados nos últimos "
-              "14 dias (o relógio não mediu ou a Garmin não enviou).")
+        print(f"AVISO: '{nome}' não aparece: sem dados no período "
+              "(o relógio não mediu ou a Garmin não enviou).")
     for a in avisos:
         print(f"AVISO: {a}")
     if abrir:
         webbrowser.open("file:///" + caminho.replace("\\", "/"))
+
+
+def periodo(dias):
+    hoje = dt.date.today()
+    # começa na segunda-feira para a primeira semana ficar completa
+    return hoje, segunda(hoje - dt.timedelta(days=max(dias, 14) - 1))
 
 
 def main(argv=None):
@@ -401,20 +406,45 @@ def main(argv=None):
                    help="testa com 1 dia e mostra os números no terminal")
     p.add_argument("--data", help="dia do teste (AAAA-MM-DD); padrão: ontem")
     p.add_argument("--dias", type=int, default=30,
-                   help="quantos dias buscar (padrão 30)")
+                   help="período do painel em dias (padrão 30)")
     p.add_argument("--sem-abrir", action="store_true",
                    help="não abre o painel no navegador")
+    p.add_argument("--so-visual", action="store_true",
+                   help="redesenha o painel com os dados já guardados, "
+                        "sem consultar a Garmin")
+    p.add_argument("--esquecer-token", action="store_true",
+                   help="apaga o token guardado no cofre do Windows")
     a = p.parse_args(argv)
     try:
+        if a.esquecer_token:
+            apagar_token_cache()
+            print("Token guardado apagado do cofre (se existia). "
+                  "A chave não foi tocada.")
+            return 0
+        dias = max(1, min(a.dias, 365))
+        if a.so_visual:
+            hoje, ini = periodo(dias)
+            dados = armazem.carregar(caminho_armazem())
+            if not dados.get("ultima_busca"):
+                raise Erro("Ainda não há dados guardados. Rode uma vez sem "
+                           "--so-visual para buscar na Garmin.")
+            quando = dt.datetime.fromisoformat(dados["atualizado_em"])
+            aviso = ("Visual redesenhado sem consultar a Garmin: dados de "
+                     f"{quando.strftime('%d/%m/%Y %H:%M')}.")
+            gerar(dados, hoje, ini, quando, [aviso], not a.sem_abrir)
+            return 0
         cli = Cliente(ler_chave())
         if a.teste:
             dia = (dt.date.fromisoformat(a.data) if a.data
                    else dt.date.today() - dt.timedelta(days=1))
             modo_teste(cli, dia)
         else:
-            modo_painel(cli, max(1, min(a.dias, 365)), not a.sem_abrir)
+            hoje, ini = periodo(dias)
+            dados = armazem.carregar(caminho_armazem())
+            avisos = atualizar_armazem(cli, dados, hoje, ini)
+            gerar(dados, hoje, ini, dt.datetime.now(), avisos, not a.sem_abrir)
         return 0
-    except Erro as e:
+    except (Erro, ErroCofre) as e:
         print(f"ERRO: {e}")
         return 1
     except Exception as e:  # nunca mostra detalhes que possam ter segredos
