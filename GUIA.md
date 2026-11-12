@@ -202,6 +202,12 @@ Clique no título de qualquer cartão ou tabela para recolher (e de novo para ab
 **▴ Recolher tudo / ▾ Expandir tudo**, ao lado de "Atualizar agora", faz isso com todas de uma vez.
 O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo abre sozinho.
 
+### Links do Strava e do Garmin Connect no topo
+Dois botões aparecem à direita do seu nome. Preencha em **✎ Provas e perfil > Perfil** (campos "Link do seu perfil...") ou
+no `perfil.txt`, com as linhas `strava: https://www.strava.com/athletes/SEU_NUMERO` e
+`garmin: https://connect.garmin.com/modern/profile/SEU_CODIGO` (copie o endereço da barra do navegador, na página do seu perfil).
+Só são aceitos endereços **https** do próprio Strava e do Garmin Connect; qualquer outro é ignorado com um aviso. Campo vazio = sem botão.
+
 ### Organizar os blocos
 Clique em **⇅ Organizar** (ao lado de "Atualizar agora"). Abre uma lista com todos os blocos do painel:
 suba ou desça com **▲ ▼**, ou arraste pelo **⠿** (no computador). Desmarque **mostrar** para esconder um bloco; ele continua

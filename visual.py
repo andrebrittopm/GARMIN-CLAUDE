@@ -821,11 +821,15 @@ def hero_html(co, agora, rotas_xy=None):
                  for r, v, cl in stats)
     frase = f'<p class="sub" style="margin:0">{esc(per["frase"])}</p>' if per["frase"] else ""
     arte = arte_topo_real(rotas_xy) if rotas_xy else arte_topo()
-    return (f'<header class="hero">{arte}<div class="hero-in">'
+    links = "".join(f'<a class="hero-link {k}" href="{esc(per[k])}" target="_blank" rel="noopener noreferrer">'
+                    f'<span>{rot}</span><i aria-hidden="true">↗</i></a>'
+                    for k, rot in (("strava", "Strava"), ("garmin", "Garmin Connect")) if per.get(k))
+    links = f'<nav class="hero-links" aria-label="Meus perfis">{links}</nav>' if links else ""
+    return (f'<header class="hero">{arte}<div class="hero-in{" tem-links" if links else ""}">'
             f'<div class="avatar">{foto}</div>'
             f'<div><p class="eyebrow">PAINEL DO CORREDOR</p><h1>{esc(per["nome"])}</h1>{frase}'
             f'<p class="sub" style="margin:6px 0 0">Período: {{ini}} a {{fim}} · atualizado em {agora.strftime("%d/%m/%Y %H:%M")}</p></div>'
-            f'<div class="hero-stats">{hs}</div></div></header>')
+            f'{links}<div class="hero-stats">{hs}</div></div></header>')
 
 
 def _st(rotulo, valor):
@@ -1292,6 +1296,15 @@ background:radial-gradient(700px 320px at 85% -10%,rgba(139,92,246,.45),transpar
 .avatar svg{width:100%;height:100%;border-radius:50%;display:block}
 .eyebrow{margin:0;font:700 .75rem var(--mono);letter-spacing:.18em;color:var(--roxo2)}
 .hero h1{font-size:clamp(2rem,5vw,3.3rem);font-style:italic;margin:4px 0 6px;letter-spacing:-.01em}
+.hero-in.tem-links{grid-template-columns:auto 1fr auto}
+.hero-links{display:flex;flex-direction:column;gap:10px;align-self:center;position:relative}
+.hero-link{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:168px;padding:10px 16px;border-radius:14px;
+border:1px solid var(--bd);border-left:4px solid var(--c);background:rgba(11,8,19,.55);color:var(--tx);text-decoration:none;
+font:700 .85rem var(--mono);backdrop-filter:blur(4px)}
+.hero-link i{font-style:normal;color:var(--mut)}.hero-link:hover,.hero-link:focus-visible{border-color:var(--roxo2);border-left-color:var(--c)}
+.hero-link.strava{--c:#FC4C02}.hero-link.garmin{--c:#2F9BE0}
+.hero-link:focus-visible{outline:2px solid var(--roxo2);outline-offset:2px}
+@media (max-width:820px){.hero-in.tem-links{grid-template-columns:auto 1fr}.hero-links{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}.hero-link{flex:1;min-width:140px}}
 .hero-stats{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:8px}
 .hs{background:rgba(11,8,19,.55);border:1px solid var(--bd);border-radius:16px;padding:12px 16px;backdrop-filter:blur(4px)}
 .hs .r{color:var(--mut);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em}
@@ -1704,12 +1717,14 @@ function atualizarAgora(){if(!cfg){if(!dlg.open)ajuda();return;}
 if(btnA)btnA.addEventListener('click',atualizarAgora);
 function formPerfil(){var pf=estado.perfil,erro=h('div',{class:'ed-erro',role:'alert'});
   var prev=h('img',{class:'ed-prev foto',alt:'Foto atual',hidden:'hidden'});if(pf.foto_uri){prev.src=pf.foto_uri;prev.hidden=false;}
-  var nome=h('input',{type:'text',maxlength:'80',value:pf.nome}),frase=h('input',{type:'text',maxlength:'160',value:pf.frase});
+  var nome=h('input',{type:'text',maxlength:'80',value:pf.nome}),frase=h('input',{type:'text',maxlength:'160',value:pf.frase}),
+    strava=h('input',{type:'text',maxlength:'300',value:pf.strava||'',placeholder:'https://www.strava.com/athletes/...'}),
+    garmin=h('input',{type:'text',maxlength:'300',value:pf.garmin||'',placeholder:'https://connect.garmin.com/modern/profile/...'});
   var foto=h('input',{type:'file',accept:'image/*'});previa(foto,prev);foto.addEventListener('change',function(){erro.textContent='';});
   var f=h('form',{class:'ed-form',onsubmit:function(ev){ev.preventDefault();erro.textContent='';arq(foto).then(function(a){
-    var c={versao:estado.versao_perfil,nome:nome.value,frase:frase.value};if(a){c.foto_b64=a.b64;c.foto_ext=a.ext;}
+    var c={versao:estado.versao_perfil,nome:nome.value,frase:frase.value,strava:strava.value,garmin:garmin.value};if(a){c.foto_b64=a.b64;c.foto_ext=a.ext;}
     return api('PUT','/api/perfil',c);}).then(salvou).catch(function(e){erro.textContent=e.message;});}},
-    h('label',{},'Seu nome',nome),h('label',{},'Frase (opcional)',frase),h('label',{},'Foto',foto),prev,erro,
+    h('label',{},'Seu nome',nome),h('label',{},'Frase (opcional)',frase),h('label',{},'Link do seu perfil no Strava (opcional)',strava),h('label',{},'Link do seu perfil no Garmin Connect (opcional)',garmin),h('label',{},'Foto',foto),prev,erro,
     h('div',{class:'ed-acoes'},h('button',{type:'submit',class:'ed-btn pri',text:'Salvar perfil'})));
   return f;}
 btn.addEventListener('click',function(){if(!cfg){ajuda();return;}dlg.showModal();carregar();});

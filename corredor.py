@@ -5,7 +5,7 @@ das provas). Números de desempenho (tempo, pace, distância percorrida) vêm SE
 da Garmin: a prova já corrida é ligada à atividade do mesmo dia.
 
 Arquivos (na pasta dos dados):
-  perfil.txt            nome:, frase:, foto:
+  perfil.txt            nome:, frase:, foto:, strava:, garmin: (links dos seus perfis, opcionais)
   provas.txt            data; nome; distância em km; logo (opcional)
   imagens/foto.jpg      sua foto
   imagens/corridas/...  logos das provas
@@ -14,6 +14,8 @@ Linhas começadas com # são comentários.
 import base64
 import datetime as dt
 import os
+import re
+import urllib.parse
 
 from formatos import eh_corrida
 
@@ -27,6 +29,9 @@ nome: Seu Nome
 frase: Corredor desde 2024
 # nome do arquivo da sua foto, que deve estar dentro da pasta imagens
 foto: foto.jpg
+# links dos seus perfis (opcional). Só são aceitos endereços https do Strava e do Garmin Connect.
+# strava: https://www.strava.com/athletes/SEU_NUMERO
+# garmin: https://connect.garmin.com/modern/profile/SEU_CODIGO
 """
 MODELO_PROVAS = """# Uma prova por linha:  data; nome; distância em km; arquivo do logo (opcional)
 # A data pode ser AAAA-MM-DD ou DD/MM/AAAA. O logo fica na pasta imagens/corridas.
@@ -110,6 +115,26 @@ def imagem_uri(pasta_base, nome, avisos, rotulo):
     return f"data:{TIPOS[ext]};base64," + base64.b64encode(dados).decode("ascii")
 
 
+HOSTS_LINK = {"strava": {"www.strava.com", "strava.com"}, "garmin": {"connect.garmin.com"}}
+_URL_OK = re.compile(r"[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]{1,300}")
+
+
+def link_valido(chave, url):
+    """URL https normalizada se for do Strava / Garmin Connect (conforme a chave); senão None.
+    Recusa outros endereços, parecidos (strava.com.outro.site), usuário@senha, espaços e aspas."""
+    url = (url or "").strip()
+    if not url or chave not in HOSTS_LINK or not _URL_OK.fullmatch(url) or "@" in url.split("//", 1)[-1].split("/", 1)[0]:
+        return None
+    try:
+        p = urllib.parse.urlsplit(url)
+        porta = p.port
+    except ValueError:
+        return None
+    if p.scheme != "https" or (p.hostname or "") not in HOSTS_LINK[chave] or porta not in (None, 443) or p.username or p.password:
+        return None
+    return url
+
+
 def carregar_perfil(pasta, avisos):
     """None se não há perfil.txt; senão dict(nome, frase, foto_uri)."""
     linhas = _linhas(os.path.join(pasta, "perfil.txt"))
@@ -122,8 +147,15 @@ def carregar_perfil(pasta, avisos):
             continue
         k, v = x.split(":", 1)
         dados[k.strip().lower()] = v.strip()
+    links = {}
+    for k in HOSTS_LINK:
+        bruto = dados.get(k)
+        links[k] = link_valido(k, bruto) or ""
+        if bruto and not links[k]:
+            avisos.append(f"perfil.txt: o link '{k}' foi ignorado (use um endereço https do "
+                          f"{'Strava' if k == 'strava' else 'Garmin Connect'}).")
     return {"nome": dados.get("nome") or "Corredor",
-            "frase": dados.get("frase") or "",
+            "frase": dados.get("frase") or "", **links,
             "foto_uri": imagem_uri(os.path.join(pasta, "imagens"), dados.get("foto"),
                                    avisos, "Foto")}
 

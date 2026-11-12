@@ -233,7 +233,8 @@ def ler_perfil(pasta):
         if s and not s.startswith("#") and ":" in s:
             k, v = s.split(":", 1)
             dados[k.strip().lower()] = v.strip()
-    return {"nome": dados.get("nome", ""), "frase": dados.get("frase", ""), "foto": dados.get("foto", "")}, versao(texto)
+    return {"nome": dados.get("nome", ""), "frase": dados.get("frase", ""), "foto": dados.get("foto", ""),
+            "strava": dados.get("strava", ""), "garmin": dados.get("garmin", "")}, versao(texto)
 
 
 def salvar_perfil(pasta, d, v_arquivo=None):
@@ -247,6 +248,12 @@ def salvar_perfil(pasta, d, v_arquivo=None):
     frase = " ".join(str(d.get("frase", atual["frase"]) or "").split())[:160]
     if not nome:
         raise ErroEdicao("Informe o seu nome.")
+    links = {}
+    for k, rot in (("strava", "Strava"), ("garmin", "Garmin Connect")):
+        bruto = " ".join(str(d.get(k, atual[k]) or "").split())
+        links[k] = corredor.link_valido(k, bruto) if bruto else ""
+        if bruto and not links[k]:
+            raise ErroEdicao(f"O link do {rot} precisa ser um endereço https do próprio {rot}.")
     foto = atual["foto"]
     if d.get("foto_b64"):
         novo = salvar_imagem(os.path.join(pasta, "imagens"), "foto", d.get("foto_ext"), d["foto_b64"])
@@ -256,7 +263,7 @@ def salvar_perfil(pasta, d, v_arquivo=None):
             except OSError:
                 pass
         foto = novo
-    novos = {"nome": nome, "frase": frase, "foto": foto}
+    novos = {"nome": nome, "frase": frase, "foto": foto, **links}
     linhas, vistos = [], set()
     for linha in _linhas(texto):
         s = linha.strip()
