@@ -29,6 +29,7 @@ diagnóstico e sem conselho de treino.
 | `formatos.py` | Formata números, datas e esportes | Não |
 | `visual.py` | Desenha a página e os gráficos | Não |
 | `diagnostico.py`, `configuracao.py` | Conferência geral e data de vencimento da chave | Não |
+| `metas.py` | Suas metas e o progresso delas | Não |
 | `dados_brutos.json` | Seus dados guardados (**dados de saúde**, sem chave) | Não |
 | `backups/` | Até 5 cópias diárias do arquivo acima | Só para restaurar |
 | `ultimo_log.txt` | O que a última atualização automática fez | Para olhar |
@@ -59,11 +60,26 @@ endereço, digite `powershell` e Enter) e use:
 | Avisar antes de a chave vencer | `py garmin_painel.py --chave-vence 2027-02-09` |
 | Ver mais dias | `py garmin_painel.py --dias 60` |
 | Guardar os dados fora do OneDrive | `py garmin_painel.py --pasta-dados "C:\PainelGarmin"` |
+| Definir uma meta sua | `py garmin_painel.py --meta km-mes=50` (veja as opções abaixo) |
+| Apagar uma meta | `py garmin_painel.py --remover-meta km-mes` |
+| Buscar mais histórico (para os recordes) | `py garmin_painel.py --historico 365` (demora na primeira vez) |
 | Apagar o token guardado | `py garmin_painel.py --esquecer-token` |
 
 A data de vencimento da chave aparece em
 https://connect.garmin.com/app/settings/personalApiToken . Informe-a uma vez com
 `--chave-vence`: a partir de 14 dias antes, o painel mostra uma faixa de aviso.
+
+### Metas, comparação e recordes
+
+- **Metas** são **suas**: você define o valor, e o painel mostra quanto já foi feito (soma das
+  corridas enviadas pela Garmin). Opções: `km-semana`, `corridas-semana`, `km-mes`, `horas-mes`.
+  Exemplo: `py garmin_painel.py --meta km-mes=50`. A marca dourada na barra é o fim da meta.
+- **Comparação** (cartão "Esta semana × semana passada × média"): a semana atual vai até hoje;
+  a média é das últimas 4 semanas completas (semana sem corrida conta como 0).
+- **Recordes** usam todo o histórico guardado. No começo ele cobre só ~30 dias; rode
+  `py garmin_painel.py --historico 365` uma vez para ampliar (pode levar alguns minutos).
+- **Peso, hidratação e SpO2** aparecem se a Garmin enviar esses dados. Sem balança conectada, o gráfico
+  de peso some e o programa avisa. Pesos acima de 300 são tratados como gramas.
 
 ## 4. Se algo der errado
 
@@ -159,6 +175,7 @@ Write-Host "PRONTO: o comando Guardar-ChaveGarmin foi criado. Nada foi guardado 
 | **VFC (HRV)** | Variabilidade da frequência cardíaca; o painel mostra a média da noite, em ms |
 | **Body Battery** | Número de 0 a 100 que a Garmin calcula para a "energia" do dia |
 | **Zonas de FC** | Faixas de intensidade (Z1 a Z5) que a Garmin define para o seu coração |
+| **SpO2** | Saturação de oxigênio no sangue, em %, medida pelo relógio |
 | **VO2máx** | Valor que a Garmin estima para a sua capacidade aeróbica |
 
 ## 8. Para aprender o código, nesta ordem

@@ -9,7 +9,7 @@ import datetime as dt
 import html
 import math
 
-from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, cor_esporte, data_br,
+from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, comparar_semanas, cor_esporte, data_br,
                       grupo, hcurto, hm, hms, km, minutos, num, pace,
                       pace_de_velocidade, rotulo_esporte, segunda,
                       totais_semana)
@@ -303,14 +303,15 @@ def graf_sono(dias, todos, hoje):
 
 
 # ------------------------------------------------------ gráfico: passos -----
-def graf_passos(dias, todos, hoje):
+def graf_barras_meta(dias, todos, hoje, campo, campo_meta, nome, nome_meta, rotulo_aria):
+    """Barras por dia com um traço dourado na meta do dia (passos, hidratação)."""
     m = len(dias)
     por = {d["data"]: d for d in todos}
     reg = [por.get(d.isoformat(), {}) for d in dias]
-    if not any(r.get("passos") for r in reg):
+    if not any(r.get(campo) for r in reg):
         return None
     h = 320
-    topo = max([r.get("passos") or 0 for r in reg] + [r.get("meta_passos") or 0 for r in reg])
+    topo = max([r.get(campo) or 0 for r in reg] + [r.get(campo_meta) or 0 for r in reg])
     lo, hi, marcas = escala(0, topo, 4)
     corpo, tips, valores = [], [], []
     bw = larg_barra(m)
@@ -318,20 +319,30 @@ def graf_passos(dias, todos, hoje):
     tem_meta = False
     for i, d in enumerate(dias):
         r, k = reg[i], d.isoformat()
-        p, mt = r.get("passos"), r.get("meta_passos")
+        p, mt = r.get(campo), r.get(campo_meta)
         if p:
             corpo.append(f'<path d="{barra(cx(i, m) - bw / 2, y0 - altura(p, lo, hi, h), bw, altura(p, lo, hi, h))}" fill="{ROXO}"/>')
         if mt:
             tem_meta = True
             y = yv(mt, lo, hi, h)
             corpo.append(f'<line class="meta" x1="{cx(i, m) - bw / 2 - 5:.1f}" x2="{cx(i, m) + bw / 2 + 5:.1f}" y1="{y:.1f}" y2="{y:.1f}"/>')
-        tips.append(tip(data_br(k), f"Passos|{num(p) if p else SEM_DADO}",
-                        f"Meta da Garmin|{num(mt) if mt else SEM_DADO}"))
+        tips.append(tip(data_br(k), f"{nome}|{num(p) if p else SEM_DADO}",
+                        f"{nome_meta}|{num(mt) if mt else SEM_DADO}"))
         valores.append(num(p) if p and m <= 16 else "")
-    leg = chip(ROXO, "passos") + (
-        '<span class="chip"><i class="traco"></i>meta da Garmin</span>' if tem_meta else "")
+    leg = chip(ROXO, nome.lower()) + (
+        f'<span class="chip"><i class="traco"></i>{esc(nome_meta.lower())}</span>' if tem_meta else "")
     base = moldura(h, lo, hi, marcas, lambda t: num(t), rotulos_dias(dias, hoje), valores)
-    return f'<div class="legrow">{leg}</div>' + svg(h, base + "".join(corpo) + zonas(h, tips), "Passos por dia e meta")
+    return f'<div class="legrow">{leg}</div>' + svg(h, base + "".join(corpo) + zonas(h, tips), rotulo_aria)
+
+
+def graf_passos(dias, todos, hoje):
+    return graf_barras_meta(dias, todos, hoje, "passos", "meta_passos", "Passos",
+                            "Meta da Garmin", "Passos por dia e meta")
+
+
+def graf_hidratacao(dias, todos, hoje):
+    return graf_barras_meta(dias, todos, hoje, "hidrat_ml", "meta_hidrat_ml", "Hidratação (ml)",
+                            "Meta de hidratação", "Hidratação por dia e meta")
 
 
 # ------------------------------------------------- gráfico: body battery ----
@@ -364,7 +375,7 @@ def graf_bb(dias, todos, hoje):
 
 
 # ----------------------------------------------- gráficos de linha ---------
-def graf_linha(dias, todos, hoje, campo, unidade, nome):
+def graf_linha(dias, todos, hoje, campo, unidade, nome, casas=0, pad_min=4):
     m = len(dias)
     por = {d["data"]: d for d in todos}
     vals = [por.get(d.isoformat(), {}).get(campo) for d in dias]
@@ -373,7 +384,7 @@ def graf_linha(dias, todos, hoje, campo, unidade, nome):
     h = 280
     presentes = [v for v in vals if v is not None]
     vmin, vmax = min(presentes), max(presentes)
-    pad = max((vmax - vmin) * 0.3, 4)
+    pad = max((vmax - vmin) * 0.3, pad_min)
     lo, hi, marcas = escala(vmin - pad, vmax + pad, 4)
     corpo, tips, valores = [], [], []
     pontos = [(cx(i, m), yv(v, lo, hi, h)) if v is not None else None for i, v in enumerate(vals)]
@@ -393,9 +404,9 @@ def graf_linha(dias, todos, hoje, campo, unidade, nome):
             valores.append("")
         else:
             corpo.append(f'<circle class="sep" cx="{p[0]:.1f}" cy="{p[1]:.1f}" r="5" fill="{ROXO_CLARO}"/>')
-            tips.append(tip(data_br(k), f"{nome}|{num(vals[i])} {unidade}"))
-            valores.append(num(vals[i]) if m <= 16 else "")
-    base = moldura(h, lo, hi, marcas, lambda t: num(t), rotulos_dias(dias, hoje), valores)
+            tips.append(tip(data_br(k), f"{nome}|{num(vals[i], casas)} {unidade}"))
+            valores.append(num(vals[i], casas) if m <= 16 else "")
+    base = moldura(h, lo, hi, marcas, lambda t: num(t, casas), rotulos_dias(dias, hoje), valores)
     return svg(h, base + "".join(corpo) + zonas(h, tips), f"{nome} por dia")
 
 
@@ -527,17 +538,40 @@ def _v(texto, valor):
     return (texto, "" if valor is None or texto == SEM_DADO else valor)
 
 
-def melhores_esforcos(atividades):
-    """Melhor tempo por distância entre as corridas (números da Garmin)."""
+def recordes(historico):
+    """Recordes pessoais no histórico guardado (números da Garmin).
+    Cada linha: [recorde, valor, detalhe, dia]."""
+    corridas = [a for a in historico if grupo(a["tipo"]) == "corrida"]
     linhas = []
     for dist, rot in MELHORES:
-        cand = [(a["melhores"].get(dist), a) for a in atividades
-                if grupo(a["tipo"]) == "corrida" and (a.get("melhores") or {}).get(dist)]
-        if not cand:
-            continue
-        t, a = min(cand, key=lambda c_: c_[0])
-        linhas.append([rot, _v(hms(t), t), _v(pace(t / (dist / 1000)), t / (dist / 1000)),
-                       (data_br(a["data"]), a["data"] or "")])
+        cand = [(a["melhores"].get(dist), a) for a in corridas
+                if (a.get("melhores") or {}).get(dist)]
+        if cand:
+            t, a = min(cand, key=lambda c_: c_[0])
+            linhas.append([f"Mais rápido: {rot}", _v(hms(t), t),
+                           f"pace {pace(t / (dist / 1000))}", (data_br(a["data"]), a["data"] or "")])
+
+    def melhor(chave, rotulo, fmt, detalhe):
+        cand = [a for a in corridas if a.get(chave)]
+        if cand:
+            a = max(cand, key=lambda x: x[chave])
+            linhas.append([rotulo, _v(fmt(a[chave]), a[chave]), detalhe(a),
+                           (data_br(a["data"]), a["data"] or "")])
+    melhor("dist_m", "Corrida mais longa", km,
+           lambda a: f"{hms(a['dur_s'])} · pace {pace(pace_de_velocidade(a['vel_ms']))}")
+    melhor("dur_s", "Corrida mais demorada", hms, lambda a: km(a["dist_m"]))
+    melhor("elev_m", "Maior ganho de elevação", lambda v: f"{num(v)} m", lambda a: km(a["dist_m"]))
+    semanas = {}
+    for a in corridas:
+        if a["data"] and a["dist_m"]:
+            k = segunda(dt.date.fromisoformat(a["data"]))
+            e = semanas.setdefault(k, [0.0, 0])
+            e[0] += a["dist_m"]
+            e[1] += 1
+    if semanas:
+        k, (d_, n_) = max(semanas.items(), key=lambda kv: kv[1][0])
+        linhas.append(["Semana com mais distância", _v(km(d_), d_), f"{n_} corridas",
+                       (f"semana de {k.day:02d}/{k.month:02d}/{k.year}", k.isoformat())])
     return linhas
 
 
@@ -589,9 +623,61 @@ def tabelas(dias, atividades, ini, hoje):
             _v(num(d.get("intensidade")), d.get("intensidade")),
             _v(num(d.get("calorias")), d.get("calorias")),
             _v(num(d.get("respiracao")), d.get("respiracao")),
-            _v(num(d.get("spo2")), d.get("spo2")), _v(num(d.get("andares")), d.get("andares"))])
+            _v(num(d.get("spo2")), d.get("spo2")), _v(num(d.get("andares")), d.get("andares")),
+            _v(f'{num(d["peso"], 1)} kg' if d.get("peso") else SEM_DADO, d.get("peso")),
+            _v(num(d.get("hidrat_ml")), d.get("hidrat_ml")),
+            _v(num(d.get("meta_hidrat_ml")), d.get("meta_hidrat_ml"))])
         datas_d.append(d["data"])
     return semanas, linhas_at, datas_at, linhas_d, datas_d
+
+
+# ------------------------------------- comparação de semanas e metas ----
+def card_comparacao(c):
+    """Esta semana x semana passada x média das últimas semanas (corridas)."""
+    cols = [("Esta semana (até hoje)", c["atual"], "#C4B5FD"),
+            ("Semana passada", c["passada"], "#8B6CF4")]
+    if c["media"]:
+        cols.append((f"Média das últimas {c['semanas_media']} semanas", c["media"], "#5B3BD6"))
+
+    def n_txt(v):
+        return num(v, 0 if abs(v - round(v)) < 1e-9 else 1)
+    metricas = [("Distância", "dist_m", km, True), ("Tempo", "dur_s", hms, True),
+                ("Corridas", "n", n_txt, True), ("Pace médio", "pace", pace, False)]
+    html_ = [f'<div class="cmp" style="--cols:{len(cols)}"><div></div>']
+    html_ += [f'<div class="cab">{esc(t)}</div>' for t, _, _ in cols]
+    for rot, chave, fmt, barras in metricas:
+        vals = [col[1][chave] for col in cols]
+        topo = max([v for v in vals if v], default=0)
+        html_.append(f'<div class="mt">{esc(rot)}</div>')
+        for (_, dados, cor), v in zip(cols, vals):
+            texto = fmt(v) if v is not None else SEM_DADO
+            largura = f'{(v / topo * 100) if (barras and topo and v) else 0:.1f}%'
+            html_.append(
+                f'<div class="cel"><span class="vv{" sd" if texto == SEM_DADO else ""}">{esc(texto)}</span>'
+                + (f'<i class="bar" style="width:{largura};background:{cor}"></i>' if barras else "")
+                + "</div>")
+    html_.append("</div>")
+    nota = ('<p class="sub">Semanas de segunda a domingo; a semana atual vai até hoje. '
+            'Semana sem corrida conta como 0 na média. O pace da média é o tempo total '
+            'dividido pela distância total.</p>')
+    return "".join(html_) + nota
+
+
+def card_metas(lista):
+    linhas = []
+    for m in lista:
+        largura = min(max(m["pct"], 0), 100)
+        linhas.append(
+            f'<div class="meta-lin"><div class="topo"><b>{esc(m["rotulo"])}</b>'
+            f'<span class="mut">{esc(m["periodo"])}</span></div>'
+            f'<div class="trilho" role="progressbar" aria-valuemin="0" aria-valuemax="100" '
+            f'aria-valuenow="{min(m["pct"], 100)}" aria-label="{esc(m["rotulo"])}">'
+            f'<i class="enche" style="width:{largura}%"></i></div>'
+            f'<div class="txt"><span class="vv">{esc(m["texto"])}</span>'
+            f'<span class="vv pct">{m["pct"]}%</span></div></div>')
+    return ('<div class="metas">' + "".join(linhas) + "</div>"
+            '<p class="sub">As metas são suas (definidas por você); o realizado é a soma das corridas '
+            'enviadas pela Garmin. A marca dourada é o fim da meta.</p>')
 
 
 # ---------------------------------------------------------------- página ----
@@ -672,8 +758,21 @@ box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:.82rem}
 #tip .tv{font-family:var(--mono);font-weight:700;text-align:right;white-space:nowrap}
 .faixa{display:flex;gap:10px;align-items:flex-start;margin-top:16px;padding:12px 16px;border-radius:14px;
 border:1px solid var(--ouro);background:rgba(255,210,63,.08);color:var(--tx);font-size:.9rem}
+.cmp{display:grid;grid-template-columns:120px repeat(var(--cols),1fr);gap:8px 14px;align-items:center}
+.cmp .cab{color:var(--mut);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+.cmp .mt{font-weight:600}
+.cmp .cel{display:flex;flex-direction:column;gap:4px}
+.cmp .vv,.metas .vv{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
+.cmp .bar{display:block;height:8px;border-radius:4px;min-width:2px}
+.metas{display:grid;gap:16px}
+.meta-lin .topo{display:flex;justify-content:space-between;gap:10px;font-size:.9rem}
+.trilho{position:relative;height:12px;border-radius:6px;background:rgba(167,139,250,.16);margin:6px 0 4px;overflow:visible}
+.trilho .enche{display:block;height:100%;border-radius:6px;background:var(--roxo)}
+.trilho::after{content:"";position:absolute;right:-1px;top:-4px;width:3px;height:20px;border-radius:2px;background:var(--ouro)}
+.meta-lin .txt{display:flex;justify-content:space-between;font-size:.9rem}
 .faixa[hidden]{display:none}
 .faixa b{color:var(--ouro);font-family:var(--titulo);text-transform:uppercase;font-size:.78rem;letter-spacing:.04em;white-space:nowrap}
+@media (max-width:640px){.cmp{grid-template-columns:90px repeat(var(--cols),1fr);font-size:.8rem}}
 @media print{
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
 --roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
@@ -775,11 +874,15 @@ document.querySelectorAll('button.csv').forEach(function(b){
 """
 
 
-def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None):
+def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
+           historico=None, metas=None, cobertura_ini=None):
     """Devolve (html, nomes_dos_gráficos_omitidos).
 
     alertas: faixas de destaque no topo (ex.: chave perto de vencer).
-    chave_vence: data de vencimento da chave, só informativa, no rodapé."""
+    chave_vence: data de vencimento da chave, só informativa, no rodapé.
+    historico: todas as atividades guardadas (para os recordes).
+    metas: lista de metas do usuário com o progresso (ver metas.progresso).
+    cobertura_ini: data (texto ISO) em que começam os dados guardados."""
     hoje = fim
     sem0 = segunda(hoje)
     disponiveis = (fim - ini).days + 1
@@ -797,6 +900,11 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
         f'<div class="v">{esc(pace(atual["pace"]))}</div></div>')
 
     omitidos, blocos = [], []
+    if metas:
+        blocos.append(cartao("Suas metas", "progresso até hoje", card_metas(metas)))
+    blocos.append(cartao("Esta semana × semana passada × média",
+                         "corridas · números da Garmin",
+                         card_comparacao(comparar_semanas(atividades, hoje, ini))))
     blocos.append(cartao("Tempo por esporte — semana atual",
                          f"{intervalo(sem0, sem0 + dt.timedelta(days=6))} · passe o mouse sobre uma fatia",
                          graf_anel(atividades, sem0, sem0 + dt.timedelta(days=6))))
@@ -828,6 +936,12 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
         por_periodo(lambda j: graf_linha(j, dias, hoje, "fc_repouso", "bpm", "FC de repouso")))
     add("VFC", "VFC — média da noite (ms)", sub,
         por_periodo(lambda j: graf_linha(j, dias, hoje, "vfc", "ms", "VFC")))
+    add("SpO2", "SpO2 média do dia (%)", sub,
+        por_periodo(lambda j: graf_linha(j, dias, hoje, "spo2", "%", "SpO2 média")))
+    add("Hidratação", "Hidratação por dia", sub + " · traço dourado = meta de hidratação",
+        por_periodo(lambda j: graf_hidratacao(j, dias, hoje)))
+    add("Peso", "Peso (kg)", sub + " · cada ponto é uma medição, sem ligar dias sem medição",
+        por_periodo(lambda j: graf_linha(j, dias, hoje, "peso", "kg", "Peso", casas=1, pad_min=1)))
     add("Distância por semana", "Distância de corrida por semana",
         f"últimas {MAX_SEMANAS} semanas no máximo · passe o mouse sobre uma semana",
         graf_dist_semana(atividades, ini, hoje))
@@ -835,23 +949,27 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
         "por semana · passe o mouse sobre uma semana", graf_zonas_semana(atividades, ini, hoje))
 
     semanas, linhas_at, datas_at, linhas_d, datas_d = tabelas(dias, atividades, ini, hoje)
-    melhores = melhores_esforcos(atividades)
     t_sem = tabela("semanas", ["Semana", "Corridas", "Distância", "Tempo", "Pace médio"], semanas)
     t_at = (tabela("atividades", ["Data", "Esporte", "Nome", "Distância", "Duração", "Pace",
                                   "FC média", "Cadência", "Elevação", "VO2máx"],
                    linhas_at, esq=(0, 1, 2), datas=datas_at)
             if linhas_at else '<p class="sd">sem dado: nenhuma atividade no período.</p>')
-    t_mel = (tabela("melhores-esforcos", ["Distância", "Tempo", "Pace", "Dia"], melhores, esq=(0,))
-             if melhores else "")
+    recs = recordes(historico if historico is not None else atividades)
+    t_mel = (tabela("recordes", ["Recorde", "Valor", "Detalhe", "Dia"], recs, esq=(0, 2))
+             if recs else "")
     t_d = (tabela("dados-diarios", ["Dia", "Passos", "Meta passos", "Treino", "Sono", "Profundo",
                                     "Leve", "REM", "FC repouso", "VFC", "FC mín–máx",
                                     "Estresse médio", "Body Battery", "Min. intensidade",
-                                    "Calorias", "Respiração", "SpO2", "Andares"],
+                                    "Calorias", "Respiração", "SpO2", "Andares", "Peso",
+                                    "Hidratação", "Meta hidratação"],
                   linhas_d, datas=datas_d)
            if linhas_d else '<p class="sd">sem dado: nenhum dia no período.</p>')
-    if not melhores:
-        omitidos.append("Melhores esforços")
+    if not recs:
+        omitidos.append("Recordes")
 
+    txt_hist = ("Histórico guardado desde " + dt.date.fromisoformat(cobertura_ini).strftime("%d/%m/%Y")
+                + ". Para ampliar: py garmin_painel.py --historico 365") if cobertura_ini \
+        else "Histórico guardado neste computador."
     faixas = "".join(f'<div class="faixa" role="alert"><b>Atenção</b><span>{esc(a)}</span></div>'
                      for a in (alertas or []))
     faixas += ('<div class="faixa" id="velho" role="status" hidden><b>Dados antigos</b>'
@@ -885,7 +1003,7 @@ atualizado em {agora.strftime('%d/%m/%Y %H:%M')}</p></div>
 
 <h2 class="t">Semanas — corridas (segunda a domingo)</h2>{t_sem}
 <h2 class="t">Atividades</h2>{t_at}
-{('<h2 class="t">Melhores esforços — corridas no período</h2>' + t_mel) if t_mel else ""}
+{('<h2 class="t">Recordes pessoais — corridas</h2><p class="sub">' + esc(txt_hist) + '</p>' + t_mel) if t_mel else ""}
 <h2 class="t">Dados diários</h2>{t_d}
 {aviso_html}
 <p class="nota">Todos os números vêm da Garmin Connect Personal API. “sem dado” (ou espaço
@@ -894,6 +1012,6 @@ que a Garmin envia 0 passos, 0 calorias ou 0 de FC de repouso aparecem como sem 
 aparece na data em que você acordou. A média semanal do sono usa todas as noites com dado
 da semana (segunda a domingo). Pace e porcentagens são contas feitas com a distância e o
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
-registrou para cada distância dentro de uma corrida. “Descanso” = nenhuma atividade
+registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
 </main><div id="tip"></div><script>{JS}</script></body></html>""", omitidos

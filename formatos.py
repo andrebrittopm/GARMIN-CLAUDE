@@ -115,8 +115,8 @@ def segunda(d):
     return d - dt.timedelta(days=d.weekday())
 
 
-def totais_semana(atividades, ini):
-    fim = ini + dt.timedelta(days=6)
+def agregado_corridas(atividades, ini, fim):
+    """Soma das corridas entre duas datas (inclusive). Números da Garmin."""
     cs = [a for a in atividades if eh_corrida(a) and a["data"]
           and ini.isoformat() <= a["data"] <= fim.isoformat()]
     dist = sum(a["dist_m"] for a in cs if a["dist_m"] is not None)
@@ -124,6 +124,31 @@ def totais_semana(atividades, ini):
     ambos = [a for a in cs if a["dist_m"] and a["dur_s"]]
     d2 = sum(a["dist_m"] for a in ambos)
     t2 = sum(a["dur_s"] for a in ambos)
-    return {"ini": ini, "fim": fim, "n": len(cs),
-            "dist_m": dist if cs else 0, "dur_s": dur if cs else 0,
+    return {"n": len(cs), "dist_m": dist, "dur_s": dur,
             "pace": (t2 / (d2 / 1000)) if d2 else None}
+
+
+def totais_semana(atividades, ini):
+    fim = ini + dt.timedelta(days=6)
+    t = agregado_corridas(atividades, ini, fim)
+    return {"ini": ini, "fim": fim, "n": t["n"], "dist_m": t["dist_m"],
+            "dur_s": t["dur_s"], "pace": t["pace"]}
+
+
+def comparar_semanas(atividades, hoje, primeiro_dia):
+    """Esta semana (até hoje) x semana passada x média das últimas 4 semanas
+    completas. Só entram semanas que começam em/depois de `primeiro_dia`
+    (limite dos dados guardados). Semana sem corrida conta 0 na média."""
+    sem0 = segunda(hoje)
+    um = dt.timedelta(days=7)
+    atual = agregado_corridas(atividades, sem0, hoje)
+    passada = agregado_corridas(atividades, sem0 - um, sem0 - dt.timedelta(days=1))
+    inicios = [sem0 - um * k for k in range(1, 5) if sem0 - um * k >= segunda(primeiro_dia)]
+    media = None
+    if inicios:
+        n = len(inicios)
+        tot = agregado_corridas(atividades, min(inicios), sem0 - dt.timedelta(days=1))
+        media = {"n": tot["n"] / n, "dist_m": tot["dist_m"] / n,
+                 "dur_s": tot["dur_s"] / n, "pace": tot["pace"]}
+    return {"atual": atual, "passada": passada, "media": media,
+            "semanas_media": len(inicios)}

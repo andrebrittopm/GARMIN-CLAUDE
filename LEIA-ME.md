@@ -21,6 +21,8 @@ Guia completo em português (para quem não programa): **GUIA.md**.
 - Atualizar: `py garmin_painel.py` (`--dias 60` para período maior)
 - Redesenhar sem consultar a Garmin: `py garmin_painel.py --so-visual`
 - Apagar o token guardado no cofre: `py garmin_painel.py --esquecer-token`
+- Metas suas: `py garmin_painel.py --meta km-mes=50` (opções: km-semana, corridas-semana, km-mes, horas-mes); apagar: `--remover-meta NOME`
+- Mais histórico para os recordes: `py garmin_painel.py --historico 365`
 - Conferir tudo (chave, token, conexão, dados, agendamento): `py garmin_painel.py --diagnostico`
 - Avisar antes de a chave vencer: `py garmin_painel.py --chave-vence AAAA-MM-DD`
 

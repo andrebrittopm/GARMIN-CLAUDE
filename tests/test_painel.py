@@ -12,6 +12,7 @@ TOKEN_FALSO = f"{_b64({'alg': 'none'})}.{_b64({'exp': time.time() + 86400})}.ass
 METODOS = []
 HOJE = dt.date.today()
 SEM_VFC = os.environ.get("SEM_VFC") == "1"   # simula relógio sem VFC
+SEM_PESO = os.environ.get("SEM_PESO") == "1"
 
 def d(i): return HOJE - dt.timedelta(days=i)
 def rng(a, b):
@@ -27,7 +28,8 @@ def resumo(x):
             "heartRate": {"restingValue": 50 + (i * 3) % 9 if i != 5 else 0, "minValue": 44, "maxValue": 150 + i},
             "stress": {"avgLevel": 20 + i}, "bodyBattery": {"minValue": 15 + (i * 7) % 30, "maxValue": 70 + (i * 5) % 28},
             "intensityMinutes": {"moderate": 10, "vigorous": 5}, "calories": {"burnedTotal": 2300 + i * 11},
-            "respiration": {"avgValue": 14}, "pulseOx": {"avgValue": 95}}
+            "respiration": {"avgValue": 14}, "pulseOx": {"avgValue": 92 + i % 5},
+            "hydration": ({"goalInMl": 2500, "consumedInFractionalMl": 1500.0 + 50 * i} if i % 4 else {})}
 
 def sono(x):
     i = (HOJE - x).days
@@ -39,7 +41,8 @@ def sono(x):
 ATIV = {1: [("running", 10000, 3000), ("strength_training", None, 2400)], 3: [("cycling", 40000, 5400)],
         4: [("trail_running", 8000, 2800)], 8: [("running", 5000, 1700)], 0: [("lap_swimming", 1500, 2100)],
         6: [("running", 12000, 3900), ("cycling", 20000, 2700)], 11: [("running", 6000, 2000)],
-        15: [("running", 7000, 2400)], 22: [("running", 9000, 3000)]}
+        15: [("running", 7000, 2400)], 22: [("running", 9000, 3000)],
+        45: [("running", 21500, 7200)]}                          # fora do período: só entra com --historico
 
 def ativ_json(i, n, t, dist, dur):
     x = d(i)
@@ -50,7 +53,7 @@ def ativ_json(i, n, t, dist, dur):
     if "running" in t:
         r.update(averageRunningCadenceInStepsPerMinute=170.0 + n, vO2MaxValue=50.0 + i % 3,
                  hrTimeInZone_1=300.0, hrTimeInZone_2=900.0 + i * 10, hrTimeInZone_3=800.0, hrTimeInZone_4=300.0, hrTimeInZone_5=0.0,
-                 fastestSplit_1000=dur / dist * 1000 * 0.93, fastestSplit_5000=dur / dist * 5000 * 0.97 if dist >= 5000 else None)
+                 **{f"fastestSplit_{m}": dur / dist * m * 0.95 for m in (1000, 1609, 5000, 10000, 21098) if dist >= m})
     return r
 
 class Estado: hrv_falha = False
@@ -68,6 +71,12 @@ class H(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != "Bearer " + TOKEN_FALSO: return self._json({}, 401)
         u = urllib.parse.urlparse(self.path); q = dict(urllib.parse.parse_qsl(u.query)); p = u.path
         if "userprofile/settings" in p: return self._json({"x": 1})
+        if "/weight-service/weight/all/" in p:
+            a, b = p.rsplit("/", 2)[-2:]
+            if SEM_PESO: return self._json([])
+            return self._json([{"calendarDate": x.isoformat(), "weight": (72500 if (HOJE - x).days == 6 else 72.0 + ((HOJE - x).days % 3) / 10),
+                                "timestampGMT": f"{x.isoformat()}T07:00:00.000Z"}
+                               for x in rng(a, b) if (HOJE - x).days % 5 == 0 or (HOJE - x).days == 6])
         if "dailysummaries" in p: return self._json({"data": [resumo(x) for x in rng(q["startDate"], q["endDate"])]})
         if "dailySleep" in p: return self._json([sono(x) for x in rng(q["startDate"], q["endDate"])])
         if "/hrv-service/hrv/daily/" in p:
@@ -130,7 +139,7 @@ if __name__ == "__main__":
     bruto = open(os.path.join(gp.PASTA, "dados_brutos.json"), encoding="utf-8").read()
     assert CHAVE_FALSA not in bruto and TOKEN_FALSO not in bruto, "armazém sem segredos"
     assert "Treino &lt;running&gt;" in pg                         # texto escapado
-    assert "Distância de corrida por semana" in pg and "Tempo por zona" in pg and "Melhores esforços" in pg
+    assert "Distância de corrida por semana" in pg and "Tempo por zona" in pg and "Recordes pessoais" in pg
 
     # 2) segunda execução: só o recente + reaproveita o token (sem novo POST)
     METODOS.clear()
@@ -264,6 +273,51 @@ if __name__ == "__main__":
     armazem.salvar(cam, st)
     rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0, out
     assert 'id="velho"' in painel() and 'data-gerado="' in painel()
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0
+
+    # 20) pacote B: comparação, metas, hidratação, SpO2, peso, recordes e histórico
+    import metas as metas_, formatos
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0 and "peso:" in out, out
+    pg = painel()
+    assert "Esta semana × semana passada × média" in pg and "Peso (kg)" in pg and "Hidratação por dia" in pg and "SpO2 média do dia" in pg
+    assert "Suas metas" not in pg, "sem metas definidas, o cartão não aparece"
+    st = armazem.carregar(cam)
+    assert st["peso"] and all(30 < v < 300 for v in st["peso"].values()), "gramas devem virar kg"
+    assert 72.5 in st["peso"].values() and 72500 not in st["peso"].values()
+    # comparação: conferida com a soma direta dos dados guardados
+    ativ = gp.montar_atividades(armazem.todas_atividades(st))
+    cmpd = formatos.comparar_semanas(ativ, HOJE, dt.date.fromisoformat(st["cobertura_ini"]))
+    sem0 = formatos.segunda(HOJE)
+    manual = sum(a["dist_m"] for a in ativ if formatos.eh_corrida(a) and a["dist_m"]
+                 and (sem0 - dt.timedelta(days=7)).isoformat() <= a["data"] < sem0.isoformat())
+    assert abs(cmpd["passada"]["dist_m"] - manual) < 1e-6
+    assert cmpd["semanas_media"] >= 4
+    # metas
+    rc, out = rodar(["--meta", "km-mes=50", "--meta", "corridas-semana=3"]); assert rc == 0 and "Meta definida" in out
+    rc, out = rodar(["--meta", "km-ano=5"]); assert rc == 1 and "Meta desconhecida" in out
+    rc, out = rodar(["--meta", "km-mes=abc"]); assert rc == 1 and "não é um número" in out
+    rc, out = rodar(["--meta", "km-mes=-3"]); assert rc == 1
+    rc, out = rodar(["--so-visual", "--sem-abrir"]); assert rc == 0
+    pg = painel(); assert "Suas metas" in pg and 'role="progressbar"' in pg
+    prog = metas_.progresso(gp.pasta_dados(), ativ, HOJE)
+    km_mes = next(m for m in prog if m["nome"] == "km-mes")
+    esperado = sum(a["dist_m"] for a in ativ if formatos.eh_corrida(a) and a["dist_m"] and a["data"][:7] == HOJE.isoformat()[:7]) / 1000
+    assert abs(km_mes["atual"] - esperado) < 1e-6 and km_mes["pct"] == round(esperado / 50 * 100)
+    rc, out = rodar(["--remover-meta", "km-mes"]); assert rc == 0
+    rc, out = rodar(["--remover-meta", "corridas-semana"]); assert rc == 0
+    assert metas_.listar(gp.pasta_dados()) == {}
+    # recordes só com o histórico: a corrida de 45 dias atrás (meia maratona) entra depois de --historico
+    assert "Mais rápido: Meia maratona" not in painel()
+    rc, out = rodar(["--sem-abrir", "--historico", "60"]); assert rc == 0, out
+    pg = painel()
+    assert "Mais rápido: Meia maratona" in pg and "Corrida mais longa" in pg and "Semana com mais distância" in pg
+    assert "Histórico guardado desde" in pg
+    st = armazem.carregar(cam); assert len(armazem.todas_atividades(st)) > len(ativ), "histórico ampliado"
+    # peso indisponível (403/404) vira "sem dado"; lista vazia omite o gráfico
+    SEM_PESO_ORIG = globals()["SEM_PESO"]; globals()["SEM_PESO"] = True
+    for x_ in ("dados_brutos.json",): os.remove(cam)
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0 and "Peso" in out and "não aparece" in out, out
+    globals()["SEM_PESO"] = SEM_PESO_ORIG
     rc, out = rodar(["--sem-abrir"]); assert rc == 0
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel

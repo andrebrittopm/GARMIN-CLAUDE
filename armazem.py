@@ -20,7 +20,7 @@ SOBREPOSICAO = 3      # e volta 3 dias a partir da última busca
 
 def vazio():
     return {"versao": VERSAO, "cobertura_ini": None, "ultima_busca": None,
-            "resumos": {}, "sonos": {}, "vfc": {}, "atividades": {}}
+            "resumos": {}, "sonos": {}, "vfc": {}, "peso": {}, "atividades": {}}
 
 
 def _valido(d):
@@ -112,9 +112,10 @@ def planejar(dados, hoje, ini_painel):
     cob, ult = dt.date.fromisoformat(cob), dt.date.fromisoformat(ult)
     ini_recente = max(cob, min(hoje - dt.timedelta(days=RECENTE_DIAS - 1),
                                ult - dt.timedelta(days=SOBREPOSICAO)))
-    pend = dados.get("vfc_pendente_ini")      # VFC que falhou numa execução anterior
-    if pend:
-        ini_recente = min(ini_recente, max(cob, dt.date.fromisoformat(pend)))
+    for chave in ("vfc_pendente_ini", "peso_pendente_ini"):   # buscas que falharam antes
+        pend = dados.get(chave)
+        if pend:
+            ini_recente = min(ini_recente, max(cob, dt.date.fromisoformat(pend)))
     jan = [(ini_recente, hoje)]
     if ini_painel < cob:
         jan.insert(0, (ini_painel, cob - dt.timedelta(days=1)))
@@ -125,7 +126,7 @@ def _data_ativ(a):
     return (a.get("startTimeLocal") or "")[:10]
 
 
-def mesclar(dados, janela, resumos, sonos, vfc, atividades):
+def mesclar(dados, janela, resumos, sonos, vfc, atividades, peso=None):
     """Aplica o resultado de UMA janela (a, b) ao armazém."""
     a, b = janela[0].isoformat(), janela[1].isoformat()
     for r in resumos:
@@ -137,6 +138,7 @@ def mesclar(dados, janela, resumos, sonos, vfc, atividades):
         if isinstance(s, dict) and s.get("calendarDate"):
             dados["sonos"][s["calendarDate"]] = s
     dados["vfc"].update(vfc)
+    dados.setdefault("peso", {}).update(peso or {})
     # atividades: o que a Garmin devolveu para a janela substitui o guardado.
     # Lista vazia não apaga nada: pode ser falha passageira, e é mais seguro
     # manter o que já estava guardado.
@@ -148,14 +150,20 @@ def mesclar(dados, janela, resumos, sonos, vfc, atividades):
             dados["atividades"][str(x["activityId"])] = x
 
 
-def marcar_vfc(dados, janela, ok):
-    """Lembra de refazer a VFC se ela falhou; limpa quando a janela refeita deu certo."""
-    pend = dados.get("vfc_pendente_ini")
+def marcar_pendente(dados, nome, janela, ok):
+    """Lembra de refazer uma busca que falhou (nome: 'vfc' ou 'peso'); limpa
+    quando a janela refeita deu certo e chegou até hoje."""
+    chave = f"{nome}_pendente_ini"
+    pend = dados.get(chave)
     if not ok:
         ini = janela[0].isoformat()
-        dados["vfc_pendente_ini"] = min(pend, ini) if pend else ini
+        dados[chave] = min(pend, ini) if pend else ini
     elif pend and janela[0].isoformat() <= pend and janela[1] >= dt.date.today():
-        dados.pop("vfc_pendente_ini", None)
+        dados.pop(chave, None)
+
+
+def marcar_vfc(dados, janela, ok):
+    marcar_pendente(dados, "vfc", janela, ok)
 
 
 def fechar(dados, hoje, ini_painel):
@@ -167,10 +175,17 @@ def fechar(dados, hoje, ini_painel):
 
 
 def recorte(dados, ini, fim):
-    """Dados do armazém dentro de [ini, fim] (listas, como a Garmin enviou)."""
+    """Dados do armazém dentro de [ini, fim], como a Garmin enviou:
+    (resumos, sonos, vfc, atividades, peso)."""
     a, b = ini.isoformat(), fim.isoformat()
     dentro = lambda d: a <= (d or "") <= b  # noqa: E731
     return ([v for k, v in sorted(dados["resumos"].items()) if dentro(k)],
             [v for k, v in sorted(dados["sonos"].items()) if dentro(k)],
             {k: v for k, v in dados["vfc"].items() if dentro(k)},
-            [v for v in dados["atividades"].values() if dentro(_data_ativ(v))])
+            [v for v in dados["atividades"].values() if dentro(_data_ativ(v))],
+            {k: v for k, v in dados.get("peso", {}).items() if dentro(k)})
+
+
+def todas_atividades(dados):
+    """Todas as atividades guardadas (histórico completo), como a Garmin enviou."""
+    return list(dados["atividades"].values())

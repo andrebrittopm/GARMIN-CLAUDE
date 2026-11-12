@@ -20,6 +20,8 @@ Uso:
     python garmin_painel.py --esquecer-token   # apaga o token guardado no cofre
     python garmin_painel.py --diagnostico      # confere tudo e diz o que está errado
     python garmin_painel.py --chave-vence 2027-02-09   # avisa antes da chave vencer
+    python garmin_painel.py --meta km-mes=50   # sua meta (veja --ajuda)
+    python garmin_painel.py --historico 365    # busca mais histórico (recordes)
 """
 import argparse
 import base64
@@ -38,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
 import configuracao  # noqa: E402
 import diagnostico  # noqa: E402
+import metas  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
                    ler_chave, ler_token_cache)
 from formatos import (MELHORES, SEM_DADO, hms, km, pace,  # noqa: E402
@@ -225,6 +228,23 @@ def buscar_vfc(c, ini, fim):
     return out
 
 
+def buscar_peso(c, ini, fim):
+    """Peso (kg) por dia: a última medição de cada dia. Devolve {data: kg}.
+    Sem balança conectada a lista vem vazia. Valores acima de 300 são tratados
+    como gramas (alguns serviços da Garmin respondem em gramas)."""
+    out = {}
+    for a, b in blocos(ini, fim, 28):
+        r = c.get(f"/weight-service/weight/all/{a.isoformat()}/{b.isoformat()}")
+        itens = sorted((x for x in _lista(r) if isinstance(x, dict)),
+                       key=lambda x: str(g(x, "timestampGMT") or ""))
+        for item in itens:                    # a última do dia sobrescreve
+            data, w = g(item, "calendarDate"), g(item, "weight")
+            if data and isinstance(w, (int, float)) and w > 0:
+                out[data] = round(w / 1000 if w > 300 else w, 2)
+        time.sleep(0.3)
+    return out
+
+
 def buscar_atividades(c, ini, fim):
     """Lê página a página até vir uma página vazia (uma página curta não
     indica o fim: a Garmin pode devolver menos que o pedido)."""
@@ -261,7 +281,7 @@ def _maior0(v):
     return v if isinstance(v, (int, float)) and v > 0 else None
 
 
-def montar_dias(resumos, sonos, vfc=None):
+def montar_dias(resumos, sonos, vfc=None, peso=None):
     """Junta resumo diário e sono por data. Todo valor vem da Garmin."""
     dias = {}
     for r in resumos:
@@ -286,9 +306,12 @@ def montar_dias(resumos, sonos, vfc=None):
             "respiracao": _pos(g(r, "respiration", "avgValue")),
             "spo2": _pos(g(r, "pulseOx", "avgValue")),
             "andares": _pos(g(r, "movement", "floorsAscended", "value")),
+            "hidrat_ml": _maior0(g(r, "hydration", "consumedInFractionalMl")),
+            "meta_hidrat_ml": _maior0(g(r, "hydration", "goalInFractionalMl")
+                                      or g(r, "hydration", "goalInMl")),
             "sono_s": None, "sono_prof_s": None, "sono_leve_s": None,
             "sono_rem_s": None,
-            "vfc": None,
+            "vfc": None, "peso": None,
         }
     for s in sonos:
         if isinstance(g(s, "dailySleepDTO"), dict):   # caso venha embrulhado
@@ -307,6 +330,8 @@ def montar_dias(resumos, sonos, vfc=None):
                                else _pos(g(s, "remSleepSeconds")))
     for data, v in (vfc or {}).items():
         dias.setdefault(data, {"data": data})["vfc"] = v
+    for data, v in (peso or {}).items():
+        dias.setdefault(data, {"data": data})["peso"] = v
     return [dias[k] for k in sorted(dias)]
 
 
@@ -383,10 +408,21 @@ def atualizar_armazem(cli, dados, hoje, ini):
             armazem.marcar_vfc(dados, jan, False)     # tenta de novo na próxima vez
             avisos.append(f"VFC não pôde ser lida ({e}); será tentada de novo "
                           "na próxima atualização")
+        try:
+            peso = buscar_peso(cli, *jan)
+            armazem.marcar_pendente(dados, "peso", jan, True)
+        except Erro as e:
+            peso = {}
+            if "403" in str(e) or "404" in str(e):
+                pass          # sem acesso/sem esse recurso: tratado como "sem dado"
+            else:
+                armazem.marcar_pendente(dados, "peso", jan, False)
+                avisos.append(f"Peso não pôde ser lido ({e}); será tentado de novo "
+                              "na próxima atualização")
         ativ = buscar_atividades(cli, *jan)
-        armazem.mesclar(dados, jan, resumos, sonos, vfc, ativ)
+        armazem.mesclar(dados, jan, resumos, sonos, vfc, ativ, peso)
         print(f"- resumos: {len(resumos)} - sono: {len(sonos)} - "
-              f"VFC: {len(vfc)} - atividades: {len(ativ)}")
+              f"VFC: {len(vfc)} - peso: {len(peso)} - atividades: {len(ativ)}")
     armazem.fechar(dados, hoje, ini)
     try:
         armazem.backup_diario(caminho_armazem())   # cópia do arquivo ANTES de mudar
@@ -402,14 +438,18 @@ def atualizar_armazem(cli, dados, hoje, ini):
 
 
 def gerar(dados, hoje, ini, agora, avisos, abrir):
-    resumos, sonos, vfc, brutas = armazem.recorte(dados, ini, hoje)
+    resumos, sonos, vfc, brutas, peso = armazem.recorte(dados, ini, hoje)
     ativ = montar_atividades(brutas)
-    alerta = configuracao.alerta(pasta_dados())
-    venc = configuracao.vencimento(pasta_dados())
-    pag, omitidos = pagina(montar_dias(resumos, sonos, vfc), ativ, ini, hoje,
+    historico = montar_atividades(armazem.todas_atividades(dados))
+    pasta = pasta_dados()
+    alerta = configuracao.alerta(pasta)
+    venc = configuracao.vencimento(pasta)
+    pag, omitidos = pagina(montar_dias(resumos, sonos, vfc, peso), ativ, ini, hoje,
                            agora, avisos, [alerta] if alerta else None,
-                           venc[0] if venc else None)
-    caminho = os.path.join(pasta_dados(), "painel.html")
+                           venc[0] if venc else None,
+                           historico=historico, metas=metas.progresso(pasta, historico, hoje),
+                           cobertura_ini=dados.get("cobertura_ini"))
+    caminho = os.path.join(pasta, "painel.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(pag)
     print(f"Painel gerado: {caminho}")
@@ -426,8 +466,10 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
 
 def periodo(dias):
     hoje = dt.date.today()
-    # começa na segunda-feira para a primeira semana ficar completa
-    return hoje, segunda(hoje - dt.timedelta(days=max(dias, 14) - 1))
+    # começa na segunda-feira para a primeira semana ficar completa, e sempre
+    # cobre o mês corrente inteiro (para a meta mensal)
+    ini = segunda(hoje - dt.timedelta(days=max(dias, 14) - 1))
+    return hoje, min(ini, segunda(hoje.replace(day=1)))
 
 
 def main(argv=None):
@@ -449,6 +491,13 @@ def main(argv=None):
                    help="confere chave, token, conexão, dados e agendamento")
     p.add_argument("--chave-vence", metavar="DATA",
                    help="data em que a chave vence (AAAA-MM-DD), para o painel avisar antes")
+    p.add_argument("--meta", action="append", metavar="NOME=VALOR",
+                   help="define uma meta sua: " + ", ".join(metas.METAS) +
+                        " (ex.: --meta km-mes=50)")
+    p.add_argument("--remover-meta", metavar="NOME", help="apaga uma meta")
+    p.add_argument("--historico", type=int, metavar="DIAS",
+                   help="busca também o histórico dos últimos DIAS dias (para os "
+                        "recordes); demora na primeira vez")
     p.add_argument("--esquecer-token", action="store_true",
                    help="apaga o token guardado no cofre do Windows")
     a = p.parse_args(argv)
@@ -465,6 +514,20 @@ def main(argv=None):
             dias = (data - dt.date.today()).days
             print(f"Vencimento da chave registrado: {data.strftime('%d/%m/%Y')} "
                   f"({'faltam ' + str(dias) + ' dias' if dias >= 0 else 'já venceu'}).")
+            return 0
+        if a.meta or a.remover_meta:
+            for texto in (a.meta or []):
+                try:
+                    nome, v = metas.definir(pasta_dados(), texto)
+                except ValueError as e:
+                    raise Erro(str(e)) from None
+                print(f"Meta definida: {metas.METAS[nome][0]} = {v:g} {metas.METAS[nome][1]}")
+            if a.remover_meta:
+                try:
+                    metas.remover(pasta_dados(), a.remover_meta)
+                except ValueError as e:
+                    raise Erro(str(e)) from None
+                print(f"Meta removida: {a.remover_meta}")
             return 0
         if a.esquecer_token:
             apagar_token_cache()
@@ -496,7 +559,10 @@ def main(argv=None):
         else:
             hoje, ini = periodo(dias)
             dados = armazem.carregar(caminho_armazem())
-            avisos = atualizar_armazem(cli, dados, hoje, ini)
+            busca_ini = ini
+            if a.historico:
+                busca_ini = min(ini, hoje - dt.timedelta(days=max(1, min(a.historico, 3650)) - 1))
+            avisos = atualizar_armazem(cli, dados, hoje, busca_ini)
             gerar(dados, hoje, ini, dt.datetime.now(), avisos, not a.sem_abrir)
         return 0
     except (Erro, ErroCofre) as e:
