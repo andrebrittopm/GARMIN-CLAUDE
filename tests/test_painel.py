@@ -320,6 +320,15 @@ if __name__ == "__main__":
     globals()["SEM_PESO"] = SEM_PESO_ORIG
     rc, out = rodar(["--sem-abrir"]); assert rc == 0
 
+    # 21) armazém antigo (sem "peso"): o peso do período inteiro é buscado uma vez
+    import json as _j
+    antigo = _j.load(open(cam, encoding="utf-8")); antigo.pop("peso", None); antigo.pop("peso_pendente_ini", None)
+    _j.dump(antigo, open(cam, "w", encoding="utf-8"))
+    METODOS.clear(); rc, out = rodar(["--sem-abrir"]); assert rc == 0, out
+    st = armazem.carregar(cam)
+    assert "peso_pendente_ini" not in st and st["peso"], "peso deveria ter sido buscado"
+    assert min(st["peso"]) <= (dt.date.fromisoformat(st["cobertura_ini"]) + dt.timedelta(days=6)).isoformat(), "cobre o período antigo"
+
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
     print("TODOS OS TESTES PASSARAM")

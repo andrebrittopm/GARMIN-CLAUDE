@@ -39,6 +39,10 @@ def carregar(caminho):
         with open(caminho, encoding="utf-8") as f:
             d = json.load(f)
         if _valido(d):
+            if "peso" not in d:          # armazém criado antes do peso existir:
+                d["peso"] = {}           # refaz a busca do período já guardado, uma vez
+                if d.get("cobertura_ini"):
+                    d["peso_pendente_ini"] = d["cobertura_ini"]
             return d
         motivo = "formato desconhecido"
     except FileNotFoundError:
