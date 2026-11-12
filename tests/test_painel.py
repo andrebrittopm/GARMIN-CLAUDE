@@ -219,6 +219,13 @@ if __name__ == "__main__":
     rc, out = rodar(["--diagnostico"]); gp.ler_chave = gp.ler_chave_orig
     assert rc == 1 and "[FALHA]" in out and "Não achei a chave" in out
 
+    # 15b) comando externo que responde com bytes não-UTF-8 (como o schtasks em português)
+    import diagnostico, subprocess
+    emite = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'Tarefa n\\xe3o encontrada \\xa2'); sys.exit({})"]
+    assert diagnostico.comando_ok([a.format(0) for a in emite]) is True
+    assert diagnostico.comando_ok([a.format(1) for a in emite]) is False
+    assert diagnostico.comando_ok(["comando-que-nao-existe-xyz"]) is None
+
     # 16) --chave-vence: aviso em 14 dias, vencida, e data inválida
     prox = (HOJE + dt.timedelta(days=9)).isoformat()
     rc, out = rodar(["--chave-vence", prox]); assert rc == 0 and "faltam 9 dias" in out, out

@@ -17,6 +17,16 @@ import configuracao
 NOME_TAREFA = "PainelGarmin"
 
 
+def comando_ok(args):
+    """True se o comando terminou com sucesso. A resposta dele é descartada:
+    o Windows responde em código de página local (acentos) e não precisamos dela."""
+    try:
+        return subprocess.run(args, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        return None
+
+
 def _idade(segundos):
     h = int(segundos // 3600)
     if h < 1:
@@ -137,15 +147,13 @@ def executar():
 
     # --- tarefa agendada (Windows)
     if sys.platform == "win32":
-        try:
-            r = subprocess.run(["schtasks", "/Query", "/TN", NOME_TAREFA],
-                               capture_output=True, text=True)
-            (ok if r.returncode == 0 else atencao)(
-                f"Atualização automática ('{NOME_TAREFA}') configurada"
-                if r.returncode == 0 else
-                "Atualização automática não está configurada (veja o GUIA.md)")
-        except OSError:
+        existe = comando_ok(["schtasks", "/Query", "/TN", NOME_TAREFA])
+        if existe is None:
             atencao("Não consegui consultar o Agendador de Tarefas.")
+        elif existe:
+            ok(f"Atualização automática ('{NOME_TAREFA}') configurada")
+        else:
+            atencao("Atualização automática não está configurada (veja o GUIA.md)")
 
     print()
     if cont["falha"]:
