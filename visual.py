@@ -975,7 +975,8 @@ background:radial-gradient(circle at 50% 35%,#2b1f4d,#140d26);border:3px solid v
 .medalha .t2{font-size:.78rem;color:var(--mut)}
 @media(max-width:560px){.hero-in{grid-template-columns:1fr}.avatar{width:110px;height:110px}.bib{grid-template-columns:auto 1fr}.conta,.num{grid-column:1/-1;flex-direction:row;gap:8px}}
 
-.btn-editar{margin-left:auto}
+.btn-grupo{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+#atu-status{align-items:center}#atu-status span{flex:1}
 dialog#editor{width:min(760px,94vw);max-height:90vh;padding:0;border:1px solid var(--roxo2);border-radius:20px;
 background:#150f26;color:var(--tx);box-shadow:0 20px 60px rgba(0,0,0,.6)}
 dialog#editor::backdrop{background:rgba(5,3,12,.75)}
@@ -1009,7 +1010,7 @@ border:1px solid var(--bd);border-radius:10px;padding:9px 11px}
 :root{--bg:#fff;--card:#fff;--bd:#c9c4d8;--tx:#1a1426;--mut:#5a5370;--ouro:#9a7400;--roxo:#6a4bd8;
 --roxo2:#4b32b0;--sep:#fff;--grade:#ddd}
 html,body{background:#fff!important;background-image:none!important}
-.seletor,.barra,#tip,#velho,dialog#editor{display:none!important}
+.seletor,.barra,#tip,#velho,#atu-status,dialog#editor{display:none!important}
 .card,.kpi,.tw{break-inside:avoid;box-shadow:none}
 .tw{overflow:visible}main{max-width:none;padding:0}
 .ch .hit{display:none}
@@ -1127,20 +1128,22 @@ function arq(input){return new Promise(function(ok,no){var f=input.files&&input.
   r.onerror=function(){no(new Error('Não consegui ler o arquivo.'));};r.readAsDataURL(f);});}
 function previa(input,img){input.addEventListener('change',function(){var f=input.files&&input.files[0];
   if(f&&/^image\\//.test(f.type)){img.src=URL.createObjectURL(f);img.hidden=false;}});}
-function topo(){return h('div',{class:'ed-top'},h('h2',{id:'ed-t',text:'Provas e perfil'}),
+function topo(){return h('div',{class:'ed-top'},h('h2',{id:'ed-t',text:'Editar o painel'}),
   h('button',{type:'button',class:'ed-btn',text:'Fechar',onclick:function(){dlg.close();}}));}
 function abas(){return h('div',{class:'ed-abas'},
   h('button',{type:'button','aria-pressed':String(aba==='provas'),text:'Provas',onclick:function(){aba='provas';desenhar();}}),
-  h('button',{type:'button','aria-pressed':String(aba==='perfil'),text:'Perfil',onclick:function(){aba='perfil';desenhar();}}));}
+  h('button',{type:'button','aria-pressed':String(aba==='perfil'),text:'Perfil',onclick:function(){aba='perfil';desenhar();}}),
+  h('button',{type:'button','aria-pressed':String(aba==='metas'),text:'Metas',onclick:function(){aba='metas';desenhar();}}),
+  h('button',{type:'button','aria-pressed':String(aba==='ajustes'),text:'Ajustes',onclick:function(){aba='ajustes';desenhar();}}));}
 function ajuda(){box.textContent='';box.appendChild(topo());
-  box.appendChild(h('p',{text:'Esta página foi aberta direto do arquivo, e o navegador não deixa um arquivo gravar nada no seu computador.'}));
-  box.appendChild(h('p',{text:'Para editar, abra o painel pelo atalho "Abrir painel" (abrir_painel.bat), que liga a edição só neste computador.'}));
+  box.appendChild(h('p',{text:'Esta página foi aberta direto do arquivo, e o navegador não deixa um arquivo gravar nada nem buscar dados novos por conta própria.'}));
+  box.appendChild(h('p',{text:'Para editar ou atualizar daqui, abra o painel pelo atalho "Abrir painel" (abrir_painel.bat), que liga isso só neste computador.'}));
   dlg.showModal();}
 function carregar(){return api('GET','/api/estado').then(function(e){estado=e;desenhar();}).catch(function(e){
   box.textContent='';box.appendChild(topo());box.appendChild(h('p',{class:'ed-erro',text:e.message}));});}
 function salvou(j){if(j.aviso){alert(j.aviso);}location.reload();}
 function desenhar(){box.textContent='';box.appendChild(topo());box.appendChild(abas());
-  box.appendChild(aba==='provas'?listaProvas():formPerfil());}
+  box.appendChild(aba==='provas'?listaProvas():aba==='perfil'?formPerfil():aba==='metas'?formMetas():formAjustes());}
 function listaProvas(){var w=h('div');
   w.appendChild(h('button',{type:'button',class:'ed-btn pri',text:'+ Adicionar prova',onclick:function(){formProva(null);}}));
   var fut=[],pas=[],hoje=document.body.getAttribute('data-hoje');
@@ -1188,6 +1191,39 @@ function formProva(p){var novo=!p||p.id==null,so=p&&p.so_logo;box.textContent=''
     if(!so){c.nome=nome.value;c.data=data.value;c.dist_km=dist.value;}else{c.nome='*';c.data=p.data;}
     if(a){c.logo_b64=a.b64;c.logo_ext=a.ext;}if(rem.checked)c.remover_logo=true;
     return novo?api('POST','/api/provas',c):api('PUT','/api/provas/'+p.id,c);}).then(salvou).catch(function(e){erro.textContent=e.message;});}}
+function formMetas(){var erro=h('div',{class:'ed-erro',role:'alert'}),campos={},defs=estado.metas_def||{},f=h('form',{class:'ed-form'});
+  f.appendChild(h('p',{class:'ed-dica',text:'As metas são suas. O painel mostra o quanto das corridas da Garmin já foi feito. Deixe em branco para não ter meta.'}));
+  Object.keys(defs).forEach(function(k){var d=defs[k],v=(estado.metas||{})[k];
+    var i=h('input',{type:'text',inputmode:'decimal',maxlength:'8',placeholder:'sem meta',value:v?numBr(v):''});campos[k]=i;
+    f.appendChild(h('label',{},d.rotulo+' ('+d.unidade+', no período: '+d.periodo+')',i));});
+  f.appendChild(erro);f.appendChild(h('div',{class:'ed-acoes'},h('button',{type:'submit',class:'ed-btn pri',text:'Salvar metas'})));
+  f.addEventListener('submit',function(ev){ev.preventDefault();erro.textContent='';var m={};
+    Object.keys(campos).forEach(function(k){m[k]=campos[k].value;});
+    api('PUT','/api/metas',{metas:m}).then(salvou).catch(function(e){erro.textContent=e.message;});});return f;}
+function formAjustes(){var erro=h('div',{class:'ed-erro',role:'alert'});
+  var venc=h('input',{type:'date',value:estado.chave_vence||''});
+  var priv=h('input',{type:'text',inputmode:'numeric',maxlength:'4',value:String(estado.privacidade_m)});
+  var dias=estado.chave_dias==null?'não informado':(estado.chave_dias<0?'já venceu':'faltam '+estado.chave_dias+' dias');
+  var f=h('form',{class:'ed-form'},
+    h('div',{class:'ed-sec',text:'Chave da Garmin'}),
+    h('p',{class:'ed-dica',text:'A data de vencimento aparece no site do Garmin Connect (Chave de API pessoal, "Expira em"). O painel avisa 14 dias antes. Situação: '+dias+'.'}),
+    h('label',{},'Vence em (deixe em branco para remover)',venc),
+    h('div',{class:'ed-sec',text:'Privacidade das rotas'}),
+    h('p',{class:'ed-dica',text:'Metros cortados do começo e do fim de cada rota desenhada (padrão 300; 0 desliga o corte).'}),
+    h('label',{},'Metros cortados',priv),erro,
+    h('div',{class:'ed-acoes'},h('button',{type:'submit',class:'ed-btn pri',text:'Salvar ajustes'})));
+  f.addEventListener('submit',function(ev){ev.preventDefault();erro.textContent='';
+    api('PUT','/api/config',{chave_vence:venc.value,privacidade_m:priv.value}).then(salvou).catch(function(e){erro.textContent=e.message;});});return f;}
+var stat=document.getElementById('atu-status'),btnA=document.getElementById('btn-atualizar'),fechaA=document.getElementById('atu-fechar');
+function msgA(t,fechar){stat.hidden=false;stat.querySelector('span').textContent=t;fechaA.hidden=!fechar;}
+if(fechaA)fechaA.addEventListener('click',function(){stat.hidden=true;});
+function acompanhar(){api('GET','/api/atualizacao').then(function(j){
+  if(j.estado==='rodando'){msgA('Atualizando… isso pode levar de 1 a 2 minutos. Não feche esta página.');setTimeout(acompanhar,2000);return;}
+  if(j.estado==='ok'){msgA('Atualizado! Recarregando…');setTimeout(function(){location.reload();},700);return;}
+  msgA('A atualização não funcionou: '+j.mensagem,true);}).catch(function(e){msgA(e.message,true);});}
+function atualizarAgora(){if(!cfg){if(!dlg.open)ajuda();return;}
+  msgA('Iniciando a atualização…');api('POST','/api/atualizar').then(acompanhar).catch(function(e){msgA(e.message,true);});}
+if(btnA)btnA.addEventListener('click',atualizarAgora);
 function formPerfil(){var pf=estado.perfil,erro=h('div',{class:'ed-erro',role:'alert'});
   var prev=h('img',{class:'ed-prev foto',alt:'Foto atual',hidden:'hidden'});if(pf.foto_uri){prev.src=pf.foto_uri;prev.hidden=false;}
   var nome=h('input',{type:'text',maxlength:'80',value:pf.nome}),frase=h('input',{type:'text',maxlength:'160',value:pf.frase});
@@ -1336,7 +1372,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
 {faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
-<span>Período:</span>{botoes}<button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></div>
+<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
+<div class="faixa" id="atu-status" role="status" hidden><b>Atualização</b><span></span><button type="button" class="ed-btn" id="atu-fechar" hidden>Fechar</button></div>
 <dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>
 {"".join(blocos)}
 

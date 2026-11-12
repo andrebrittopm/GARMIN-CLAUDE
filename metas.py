@@ -82,3 +82,24 @@ def progresso(pasta, atividades, hoje):
             "periodo": f"{ini.day:02d}/{ini.month:02d} a {fim.day:02d}/{fim.month:02d}",
         })
     return out
+
+
+def salvar_todas(pasta, valores):
+    """valores: {nome: número | None | ''}. Vazio/None remove a meta. Valida tudo antes de gravar."""
+    novos = {}
+    for nome, v in (valores or {}).items():
+        if nome not in METAS:
+            raise ValueError("Meta desconhecida: " + str(nome)[:30])
+        if v in (None, ""):
+            continue
+        try:
+            x = float(str(v).replace(",", "."))
+        except ValueError:
+            raise ValueError(f"'{v}' não é um número ({METAS[nome][0]}).") from None
+        if not 0 < x <= MAXIMO:
+            raise ValueError(f"{METAS[nome][0]}: use um valor maior que 0 e até {MAXIMO}.")
+        novos[nome] = x
+    d = configuracao.carregar(pasta)
+    d["metas"] = novos
+    configuracao.salvar(pasta, d)
+    return novos

@@ -610,6 +610,68 @@ linha ruim
     pg = painel(); assert 'id="btn-editar"' in pg and "<!--EDITOR_CFG-->" in pg and "window.EDITOR=" not in pg
     assert "'.seletor button[data-n]'" in pg and "querySelectorAll('.seletor button')" not in pg, "o seletor de período não pode pegar o botão do editor"
 
+    # 27) metas, ajustes e "Atualizar agora" pelo painel
+    import metas as metas_mod, configuracao
+    assert metas_mod.salvar_todas(pasta_, {"km-mes": "50", "corridas-semana": "3,5", "km-semana": "", "horas-mes": None}) == {"km-mes": 50.0, "corridas-semana": 3.5}
+    assert metas_mod.listar(pasta_) == {"km-mes": 50.0, "corridas-semana": 3.5}
+    for ruim in ({"km-ano": 5}, {"km-mes": "abc"}, {"km-mes": -1}, {"km-mes": 1e9}):
+        try: metas_mod.salvar_todas(pasta_, ruim); raise SystemExit(f"deveria recusar {ruim}")
+        except ValueError: pass
+    assert metas_mod.listar(pasta_) == {"km-mes": 50.0, "corridas-semana": 3.5}, "recusa não altera nada"
+    metas_mod.salvar_todas(pasta_, {})
+    dormir = lambda s: threading.Event().wait(s)     # espera de verdade (time.sleep está desativado nos testes)
+    estado_atu = {"n": 0}
+    class ErroFake(Exception): pass
+    ErroFake.__name__ = "Erro"                                           # nome "seguro", como gp.Erro
+    def fake_atualizar():
+        estado_atu["n"] += 1
+        if estado_atu["n"] == 2: raise ErroFake("A chave venceu (mensagem segura)")
+        if estado_atu["n"] == 3: raise RuntimeError("SEGREDO-123 não pode vazar")
+        dormir(0.4); print("- coisas no stdout não vazam"); return ["aviso de teste"]
+    httpd, tok, porta_srv = servidor.criar(pasta_, lambda: gp.redesenhar(30, False), 18766, garmin=gp.competicoes_sem_logo, atualizar=fake_atualizar)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start(); AUT = {"X-Token": tok}
+    def req2(met, caminho, corpo=None, cab=None):
+        c_ = http.client.HTTPConnection("127.0.0.1", porta_srv, timeout=10); h_ = {"Host": f"127.0.0.1:{porta_srv}", **(cab or {})}
+        if corpo is not None: h_["Content-Type"] = "application/json"; corpo = json.dumps(corpo)
+        c_.request(met, caminho, body=corpo, headers=h_); r_ = c_.getresponse(); b_ = r_.read().decode(); c_.close(); return r_.status, (json.loads(b_) if b_.startswith("{") else b_)
+    st, d_ = req2("GET", "/api/estado", cab=AUT); assert st == 200 and d_["pode_atualizar"] is True and set(d_["metas_def"]) == set(metas_mod.METAS) and d_["privacidade_m"] == 300
+    st, _ = req2("PUT", "/api/metas", {"metas": {"km-mes": "50"}}); assert st == 403, "sem senha"
+    st, d_ = req2("PUT", "/api/metas", {"metas": {"km-mes": "50", "corridas-semana": "3"}}, cab=AUT); assert st == 200 and metas_mod.listar(pasta_) == {"km-mes": 50.0, "corridas-semana": 3.0}
+    assert "Suas metas" in painel(), "painel recriado com as metas"
+    st, d_ = req2("PUT", "/api/metas", {"metas": {"km-mes": "abc"}}, cab=AUT); assert st == 400 and "número" in d_["erro"]
+    st, d_ = req2("PUT", "/api/metas", {"metas": {}}, cab=AUT); assert st == 200 and "Suas metas" not in painel()
+    prox5 = (HOJE + dt.timedelta(days=5)).isoformat()
+    st, _ = req2("PUT", "/api/config", {"chave_vence": prox5, "privacidade_m": "450"}, cab=AUT); assert st == 200
+    assert configuracao.privacidade_m(pasta_) == 450 and "vence em 5 dias" in painel()
+    for ruim in ({"chave_vence": "31/02/2027"}, {"chave_vence": "1990-01-01"}, {"privacidade_m": "99999"}, {"privacidade_m": "abc"}):
+        st, d_ = req2("PUT", "/api/config", ruim, cab=AUT); assert st == 400, (ruim, st)
+    st, _ = req2("PUT", "/api/config", {"chave_vence": "", "privacidade_m": "300"}, cab=AUT); assert st == 200 and configuracao.vencimento(pasta_) is None
+    # atualização: estados, bloqueios e mensagens sem vazamento
+    st, d_ = req2("GET", "/api/atualizacao", cab=AUT); assert st == 200 and d_["estado"] == "parado"
+    st, _ = req2("POST", "/api/atualizar"); assert st == 403
+    st, _ = req2("GET", "/api/atualizacao"); assert st == 403
+    st, _ = req2("POST", "/api/atualizar", {}, cab=AUT); assert st == 202
+    st, d_ = req2("POST", "/api/atualizar", {}, cab=AUT); assert st == 409, ("uma por vez", st, d_)
+    for _ in range(50):
+        dormir(0.1); st, d_ = req2("GET", "/api/atualizacao", cab=AUT)
+        if d_["estado"] != "rodando": break
+    assert d_["estado"] == "ok" and d_["avisos"] == ["aviso de teste"] and "stdout" not in json.dumps(d_)
+    st, d_ = req2("POST", "/api/atualizar", {}, cab=AUT); assert st == 429 and "Aguarde" in d_["erro"], "intervalo mínimo"
+    servidor.INTERVALO_ATUALIZACAO_S = 0
+    st, _ = req2("POST", "/api/atualizar", {}, cab=AUT); assert st == 202; dormir(0.3)
+    st, d_ = req2("GET", "/api/atualizacao", cab=AUT); assert d_["estado"] == "erro" and d_["mensagem"] == "A chave venceu (mensagem segura)"
+    st, _ = req2("POST", "/api/atualizar", {}, cab=AUT); assert st == 202; dormir(0.3)
+    st, d_ = req2("GET", "/api/atualizacao", cab=AUT); assert d_["estado"] == "erro" and "SEGREDO" not in json.dumps(d_) and "RuntimeError" in d_["mensagem"]
+    httpd.shutdown(); httpd.server_close()
+    h2, t2, p2 = servidor.criar(pasta_, lambda: None, 18770); threading.Thread(target=h2.serve_forever, daemon=True).start()
+    c_ = http.client.HTTPConnection("127.0.0.1", p2); c_.request("POST", "/api/atualizar", body="{}", headers={"Host": f"127.0.0.1:{p2}", "X-Token": t2, "Content-Type": "application/json"})
+    assert c_.getresponse().status == 404, "sem função de atualização, não há botão"; h2.shutdown(); h2.server_close()
+    servidor.INTERVALO_ATUALIZACAO_S = 60
+    # a atualização completa real (contra o Garmin falso) cria um painel novo, sem deixar .tmp
+    antes = os.path.getmtime(os.path.join(pasta_, "painel.html"))
+    dormir(0.05); av = gp.executar_atualizacao(30, False); assert os.path.getmtime(os.path.join(pasta_, "painel.html")) > antes
+    assert not any(n.endswith(".tmp") for n in os.listdir(pasta_)), "gravação atômica"
+
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
     print("TODOS OS TESTES PASSARAM")

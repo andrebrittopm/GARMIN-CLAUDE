@@ -84,3 +84,9 @@ def definir_privacidade(pasta, metros):
     d["privacidade_m"] = int(metros)
     salvar(pasta, d)
     return int(metros)
+
+
+def remover_vencimento(pasta):
+    d = carregar(pasta)
+    d.pop("chave_vence", None)
+    salvar(pasta, d)

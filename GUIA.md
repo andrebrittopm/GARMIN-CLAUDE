@@ -120,6 +120,12 @@ acessível pela rede nem pela internet) e abre o painel no navegador. Use o bot�
 - **Provas:** adicionar, editar (✎) e apagar (✕), com calendário e escolha do logo pelo seu computador.
   Competições marcadas na Garmin sem logo aparecem com o botão **Colocar logo**.
 - **Perfil:** nome, frase e foto.
+- **Metas:** defina ou apague suas metas (km na semana, corridas na semana, km no mês, horas no mês).
+- **Ajustes:** data de vencimento da chave da Garmin (o painel avisa 14 dias antes) e privacidade das rotas.
+- **↻ Atualizar agora:** busca dados novos na Garmin sem abrir o PowerShell (leva de 1 a 2 minutos).
+  Só funciona com o painel aberto por `abrir_painel.bat`. No máximo uma atualização por vez e uma por
+  minuto. A chave continua no cofre do Windows: o programa a lê na hora, só em memória, e ela nunca vai
+  para a página do navegador.
 - Ao salvar, o painel é recriado e a página recarrega. O `provas.txt` e o `perfil.txt` continuam
   editáveis no Bloco de Notas; comentários e linhas que o painel não entende são preservados.
 - Para encerrar, **feche a janela preta**. Abrindo o `painel.html` direto do arquivo, o botão só explica

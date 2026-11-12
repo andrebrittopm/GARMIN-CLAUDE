@@ -566,8 +566,10 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
                            cobertura_ini=dados.get("cobertura_ini"), corredor=co,
                            rotas=preparar_rotas(pasta, historico) if os.path.exists(rotas.caminho_rotas(pasta)) else None)
     caminho = os.path.join(pasta, "painel.html")
-    with open(caminho, "w", encoding="utf-8") as f:
+    tmp = caminho + ".tmp"            # grava inteiro e só então troca: nunca fica pela metade
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(pag)
+    os.replace(tmp, caminho)
     print(f"Painel gerado: {caminho}")
     for nome in omitidos:
         print(f"AVISO: '{nome}' não aparece: sem dados no período "
@@ -586,6 +588,21 @@ def periodo(dias):
     # cobre o mês corrente inteiro (para a meta mensal)
     ini = segunda(hoje - dt.timedelta(days=max(dias, 14) - 1))
     return hoje, min(ini, segunda(hoje.replace(day=1)))
+
+
+def executar_atualizacao(dias=30, abrir=False, historico=None, rotas_todas=False, cli=None):
+    """Atualização completa: dados da Garmin, trilhas e painel. Usada pela linha de
+    comando e pelo botão "Atualizar agora". Devolve a lista de avisos."""
+    cli = cli or Cliente(ler_chave())
+    hoje, ini = periodo(dias)
+    dados = armazem.carregar(caminho_armazem())
+    busca_ini = ini
+    if historico:
+        busca_ini = min(ini, hoje - dt.timedelta(days=max(1, min(historico, 3650)) - 1))
+    avisos = atualizar_armazem(cli, dados, hoje, busca_ini)
+    avisos += atualizar_rotas(cli, dados, 100000 if rotas_todas else rotas.POR_EXECUCAO, rotas_todas)
+    gerar(dados, hoje, ini, dt.datetime.now(), avisos, abrir)
+    return avisos
 
 
 def competicoes_sem_logo():
@@ -717,7 +734,8 @@ def main(argv=None):
         if a.servir:
             import servidor
             return servidor.servir(pasta_dados(), lambda: redesenhar(dias, False),
-                                   a.porta or 8765, not a.sem_abrir, competicoes_sem_logo)
+                                   a.porta or 8765, not a.sem_abrir, competicoes_sem_logo,
+                                   lambda: executar_atualizacao(dias, False))
         cli = Cliente(ler_chave())
         if a.teste_rota:
             modo_teste_rota(cli, a.data)
@@ -727,14 +745,7 @@ def main(argv=None):
                    else dt.date.today() - dt.timedelta(days=1))
             modo_teste(cli, dia)
         else:
-            hoje, ini = periodo(dias)
-            dados = armazem.carregar(caminho_armazem())
-            busca_ini = ini
-            if a.historico:
-                busca_ini = min(ini, hoje - dt.timedelta(days=max(1, min(a.historico, 3650)) - 1))
-            avisos = atualizar_armazem(cli, dados, hoje, busca_ini)
-            avisos += atualizar_rotas(cli, dados, 100000 if a.rotas else rotas.POR_EXECUCAO, a.rotas)
-            gerar(dados, hoje, ini, dt.datetime.now(), avisos, not a.sem_abrir)
+            executar_atualizacao(dias, not a.sem_abrir, a.historico, a.rotas, cli)
         return 0
     except (Erro, ErroCofre, rotas.ErroRota) as e:
         print(f"ERRO: {e}")

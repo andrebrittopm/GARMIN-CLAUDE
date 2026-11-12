@@ -9,20 +9,30 @@ Segurança:
 - só grava via editor.py (provas.txt, perfil.txt, imagens); nada de caminhos vindos do navegador;
 - sem log de acesso (a senha aparece na URL); sem internet; não toca na chave da Garmin.
 """
+import contextlib
+import datetime as dt
 import hmac
+import io
 import json
+import os
 import re
 import secrets
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import armazem
+import configuracao
 import corredor
 import editor
+import metas
 
 MARCADOR = "<!--EDITOR_CFG-->"
 LIMITE_CORPO = 5_000_000
+INTERVALO_ATUALIZACAO_S = 60       # no mínimo 1 minuto entre atualizações pedidas pelo painel
+ERROS_SEGUROS = {"Erro", "ErroCofre", "ErroRota"}   # mensagens que nunca têm segredo
 CSP = ("default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; "
        "script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors 'none'")
@@ -32,7 +42,7 @@ PAGINA_SEM_SENHA = """<!doctype html><meta charset="utf-8"><title>Painel Garmin<
 o endereço com a senha desta sessão.</p></body>"""
 
 
-def criar(pasta, regerar, porta=8765, token=None, garmin=None):
+def criar(pasta, regerar, porta=8765, token=None, garmin=None, atualizar=None):
     """Devolve (httpd, token, porta). `regerar()` recria o painel.html sem consultar a Garmin."""
     token = token or secrets.token_urlsafe(24)
     trava = threading.Lock()
@@ -40,7 +50,7 @@ def criar(pasta, regerar, porta=8765, token=None, garmin=None):
     ultimo_erro = None
     for p in range(porta, porta + 21):
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", p), _handler(pasta, regerar, token, trava, p, garmin))
+            httpd = ThreadingHTTPServer(("127.0.0.1", p), _handler(pasta, regerar, token, trava, p, garmin, atualizar))
             porta = p
             break
         except OSError as e:
@@ -50,7 +60,7 @@ def criar(pasta, regerar, porta=8765, token=None, garmin=None):
     return httpd, token, porta
 
 
-def _estado(pasta, garmin=None):
+def _estado(pasta, garmin=None, pode_atualizar=False):
     provas, v_provas = editor.listar_provas(pasta)
     for p in provas:
         p["logo_uri"] = corredor.imagem_uri(f"{pasta}/imagens/corridas", p["logo"], [], "logo") if p["logo"] else None
@@ -58,13 +68,78 @@ def _estado(pasta, garmin=None):
     perfil["foto_uri"] = corredor.imagem_uri(f"{pasta}/imagens", perfil["foto"], [], "foto") if perfil["foto"] else None
     ja = {(p["data"]) for p in provas}
     sem_logo = [c for c in (garmin() if garmin else []) if c["data"] not in ja]
+    venc = configuracao.vencimento(pasta)
+    store = armazem.carregar(os.path.join(pasta, "dados_brutos.json"))
     return {"provas": provas, "versao_provas": v_provas, "perfil": perfil, "versao_perfil": v_perfil,
-            "garmin": sem_logo}
+            "garmin": sem_logo, "metas": metas.listar(pasta),
+            "metas_def": {k: {"rotulo": v[0], "unidade": v[1], "periodo": v[2]} for k, v in metas.METAS.items()},
+            "chave_vence": venc[0].isoformat() if venc else None,
+            "chave_dias": venc[1] if venc else None,
+            "privacidade_m": configuracao.privacidade_m(pasta),
+            "atualizado_em": store.get("atualizado_em"), "pode_atualizar": bool(pode_atualizar)}
 
 
-def _handler(pasta, regerar, token, trava, porta, garmin=None):
+def _salvar_metas(pasta, d):
+    try:
+        return metas.salvar_todas(pasta, d.get("metas") or {})
+    except ValueError as e:
+        raise editor.ErroEdicao(str(e)) from None
+
+
+def _salvar_config(pasta, d):
+    """Vencimento da chave e privacidade das rotas."""
+    if "chave_vence" in d:
+        v = str(d["chave_vence"] or "").strip()
+        if not v:
+            configuracao.remover_vencimento(pasta)
+        else:
+            try:
+                data = dt.date.fromisoformat(v)
+            except ValueError:
+                raise editor.ErroEdicao("Informe uma data de vencimento válida.") from None
+            hoje = dt.date.today()
+            if not hoje - dt.timedelta(days=365) <= data <= hoje + dt.timedelta(days=3650):
+                raise editor.ErroEdicao("A data de vencimento está fora do intervalo aceito.")
+            configuracao.definir_vencimento(pasta, v)
+    if d.get("privacidade_m") not in (None, ""):
+        try:
+            n = int(float(str(d["privacidade_m"]).replace(",", ".")))
+            configuracao.definir_privacidade(pasta, n)
+        except ValueError:
+            raise editor.ErroEdicao("A privacidade das rotas deve ser um número de 0 a 2000 metros.") from None
+    return {"ok": True}
+
+
+def _handler(pasta, regerar, token, trava, porta, garmin=None, atualizar=None):
     hosts = {f"127.0.0.1:{porta}", f"localhost:{porta}"}
     origens = {f"http://127.0.0.1:{porta}", f"http://localhost:{porta}"}
+
+    atu = {"estado": "parado", "mensagem": "", "avisos": [], "inicio": 0.0, "fim": 0.0}
+    atu_trava = threading.Lock()
+
+    def rodar_atualizacao():
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                avisos = atualizar()
+            novo = {"estado": "ok", "mensagem": "Atualização concluída.", "avisos": list(avisos or [])[:10]}
+        except Exception as e:
+            msg = str(e) if type(e).__name__ in ERROS_SEGUROS else f"Erro inesperado ({type(e).__name__})."
+            novo = {"estado": "erro", "mensagem": msg, "avisos": []}
+        with atu_trava:
+            atu.update(novo, fim=time.time())
+
+    def iniciar_atualizacao():
+        if atualizar is None:
+            raise editor.ErroEdicao("A atualização não está disponível neste modo.", 404)
+        with atu_trava:
+            if atu["estado"] == "rodando":
+                raise editor.ErroEdicao("Já existe uma atualização em andamento.", 409)
+            espera = INTERVALO_ATUALIZACAO_S - (time.time() - atu["inicio"])
+            if espera > 0:
+                raise editor.ErroEdicao(f"Aguarde {int(espera) + 1} s para atualizar de novo.", 429)
+            atu.update(estado="rodando", mensagem="Buscando dados na Garmin…", avisos=[], inicio=time.time(), fim=0.0)
+        threading.Thread(target=rodar_atualizacao, daemon=True).start()
 
     class H(BaseHTTPRequestHandler):
         server_version = "PainelLocal"
@@ -166,7 +241,12 @@ def _handler(pasta, regerar, token, trava, porta, garmin=None):
             if u.path == "/api/estado":
                 if not self._autenticado():
                     return self._json(403, {"erro": "Acesso negado."})
-                return self._json(200, _estado(pasta, garmin))
+                return self._json(200, _estado(pasta, garmin, atualizar is not None))
+            if u.path == "/api/atualizacao":
+                if not self._autenticado():
+                    return self._json(403, {"erro": "Acesso negado."})
+                with atu_trava:
+                    return self._json(200, dict(atu))
             if u.path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
@@ -174,7 +254,16 @@ def _handler(pasta, regerar, token, trava, porta, garmin=None):
             return self._json(404, {"erro": "Não encontrado."})
 
         def do_POST(self):
-            if urlparse(self.path).path != "/api/provas":
+            rota = urlparse(self.path).path
+            if rota == "/api/atualizar":
+                if not self._seguro() or not self._autenticado():
+                    return self._json(403, {"erro": "Acesso negado."})
+                try:
+                    iniciar_atualizacao()
+                except editor.ErroEdicao as e:
+                    return self._json(e.codigo, {"erro": str(e)})
+                return self._json(202, {"ok": True})
+            if rota != "/api/provas":
                 return self._json(404, {"erro": "Não encontrado."})
             if not self._seguro() or not self._autenticado():
                 return self._json(403, {"erro": "Acesso negado."})
@@ -189,6 +278,12 @@ def _handler(pasta, regerar, token, trava, porta, garmin=None):
             if not self._seguro() or not self._autenticado():
                 return self._json(403, {"erro": "Acesso negado."})
             try:
+                if rota == "/api/metas":
+                    d = self._corpo()
+                    return self._api(lambda: _salvar_metas(pasta, d))
+                if rota == "/api/config":
+                    d = self._corpo()
+                    return self._api(lambda: _salvar_config(pasta, d))
                 if rota == "/api/perfil":
                     d = self._corpo()
                     return self._api(lambda: editor.salvar_perfil(pasta, d, d.get("versao")))
@@ -210,8 +305,8 @@ def _handler(pasta, regerar, token, trava, porta, garmin=None):
     return H
 
 
-def servir(pasta, regerar, porta=8765, abrir=True, garmin=None):
-    httpd, token, porta = criar(pasta, regerar, porta, garmin=garmin)
+def servir(pasta, regerar, porta=8765, abrir=True, garmin=None, atualizar=None):
+    httpd, token, porta = criar(pasta, regerar, porta, garmin=garmin, atualizar=atualizar)
     url = f"http://127.0.0.1:{porta}/?t={token}"
     print("Painel com edição ligado (só neste computador).")
     print(f"Endereço: {url}")
