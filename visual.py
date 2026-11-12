@@ -1402,6 +1402,34 @@ html,body{background:#fff!important;background-image:none!important}
 }
 """
 
+TEMA_CLARO = """
+@@{color-scheme:light;--bg:#f5f3fb;--card:rgba(255,255,255,.92);--bd:rgba(91,59,214,.2);--tx:#1d1530;--mut:#5a5370;
+--ouro:#9a6b00;--roxo:#6a4bd8;--roxo2:#5b3bd6;--sep:#fff;--grade:rgba(91,59,214,.14)}
+@@ body{background-image:radial-gradient(900px 520px at 100% -8%,rgba(139,92,246,.16),transparent 62%),
+linear-gradient(rgba(91,59,214,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(91,59,214,.05) 1px,transparent 1px)}
+@@ .hero,@@ .rota,@@ .mapa,@@ .det-mapa,@@ div.anel,@@ .bib .mini{color:var(--tx);--card:rgba(26,19,42,.78);--bd:rgba(167,139,250,.2);
+--tx:#ece8f8;--mut:#a79fc2;--ouro:#FFD23F;--roxo:#8B6CF4;--roxo2:#C4B5FD;--sep:#120d1c;--grade:rgba(167,139,250,.14)}
+@@ .rota{background:#0d0918}
+@@ #tip{background:#fff;box-shadow:0 10px 30px rgba(40,20,90,.28)}
+@@ dialog#editor,@@ dialog#detalhe{background:#fff;box-shadow:0 20px 60px rgba(40,20,90,.4)}
+@@ .ed-form input[type=text],@@ .ed-form input[type=date],@@ .ed-form input[type=number]{background:#fff}
+@@ .ed-btn.perigo,@@ .ed-erro{color:#b3265e}@@ .ed-btn.perigo{border-color:#b3265e}
+@@ .det-st{background:rgba(106,75,216,.06)}
+@@ i.quad,@@ i.z1,@@ i.z2,@@ i.z3,@@ i.z4{outline:1px solid rgba(0,0,0,.2)}
+@@ tr.z2 td:first-child{box-shadow:inset 4px 0 0 #B59F00}@@ i.z2{background:#B59F00}
+"""
+TEMA_HEAD_JS = "try{if(localStorage.getItem('painel-tema')==='claro')document.documentElement.setAttribute('data-tema','claro');}catch(e){}"
+TEMA_JS = """
+(function(){
+var b=document.getElementById('btn-tema'),h=document.documentElement;
+function rot(){var c=h.getAttribute('data-tema')==='claro';if(b){b.textContent=c?'☾ Tema escuro':'☀ Tema claro';b.setAttribute('aria-pressed',c?'true':'false');}}
+if(b)b.addEventListener('click',function(){var c=h.getAttribute('data-tema')==='claro';
+  if(c)h.removeAttribute('data-tema');else h.setAttribute('data-tema','claro');
+  try{if(c)localStorage.removeItem('painel-tema');else localStorage.setItem('painel-tema','claro');}catch(e){}rot();});
+rot();
+})();
+"""
+
 JS = """
 (function(){
 var tip=document.getElementById('tip'),corpo=document.body;
@@ -1811,14 +1839,14 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Painel Garmin</title><style>{CSS}{PLANO_CSS}{regras}</style></head>
+<title>Painel Garmin</title><style>{CSS}{PLANO_CSS}{TEMA_CLARO.replace('@@', 'html[data-tema=claro]')}{regras}</style><script>{TEMA_HEAD_JS}</script></head>
 <body data-n="{padrao}" data-hoje="{hoje.isoformat()}" data-gerado="{agora.strftime('%Y-%m-%dT%H:%M:%S')}"><main>
 {cabecalho}
 
 {faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
-<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
+<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-tema" class="btn-editar" aria-pressed="false">☀ Tema claro</button><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
 <div class="faixa" id="atu-status" role="status" hidden><b>Atualização</b><span></span><button type="button" class="ed-btn" id="atu-fechar" hidden>Fechar</button></div>
 <dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>
 {"".join(blocos)}
@@ -1836,4 +1864,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script></body></html>""", omitidos
+</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script><script>{TEMA_JS}</script></body></html>""", omitidos

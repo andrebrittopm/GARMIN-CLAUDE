@@ -126,6 +126,8 @@ with tempfile.TemporaryDirectory() as pasta:
                    'class="z', "Riegel", "Riegel costuma dar"):
         assert trecho in pag, trecho
     assert pag.count('<details class="card sec') >= 6 and pag.count("</details>") == pag.count("<details") and 'id="btn-recolher"' in pag
+    assert 'id="btn-tema"' in pag and "html[data-tema=claro] body" in pag and "@@" not in pag and pag.count("painel-tema") >= 3, "tema claro"
+    assert pag.index("painel-tema") < pag.index("<main>"), "o tema é aplicado antes do corpo (sem piscar)"
     assert pag.count('<details class="sec sec-t" open>') == 4 and "painel-secoes" in pag and "beforeprint" in pag, "seções recolhíveis"
     assert pag.count('class="pl-d') == 5 and pag.count('class="pl-d on"') == 1
     ref_antes, _ = visual.pagina(dias, HIST, ini, HOJE, agora, historico=HIST)

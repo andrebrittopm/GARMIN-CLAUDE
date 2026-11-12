@@ -202,6 +202,11 @@ Clique no título de qualquer cartão ou tabela para recolher (e de novo para ab
 **▴ Recolher tudo / ▾ Expandir tudo**, ao lado de "Atualizar agora", faz isso com todas de uma vez.
 O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo abre sozinho.
 
+### Tema claro
+O botão **☀ Tema claro / ☾ Tema escuro** (ao lado de "Atualizar agora") alterna o visual. O painel lembra a sua escolha
+neste navegador. O topo com sua foto, os desenhos das rotas e as medalhas continuam escuros de propósito, para os desenhos
+aparecerem bem.
+
 ### Cópia de segurança dos seus arquivos pessoais
 Dê dois cliques em **`backup_pessoal.bat`** (ou rode `py garmin_painel.py --backup-pessoal`). Cria um ZIP em
 `backups_pessoais\` com seu perfil, provas, plano, configurações, foto e logos (guarda os 10 mais recentes).
