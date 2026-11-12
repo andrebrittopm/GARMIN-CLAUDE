@@ -9,7 +9,7 @@ import datetime as dt
 import html
 import math
 
-from formatos import (DIAS_SEMANA, ESPORTES, SEM_DADO, cor_esporte, data_br,
+from formatos import (DIAS_SEMANA, ESPORTES, MELHORES, SEM_DADO, cor_esporte, data_br,
                       grupo, hcurto, hm, hms, km, minutos, num, pace,
                       pace_de_velocidade, rotulo_esporte, segunda,
                       totais_semana)
@@ -26,8 +26,6 @@ SONO = {"prof": ("Profundo", "#6C4BE8"), "leve": ("Leve", "#A592F5"),
 SONO_SEM_FASES = "#6F678C"
 ZONAS = [("Z1", "#E4DBFF"), ("Z2", "#C4B5FD"), ("Z3", "#A592F5"),
          ("Z4", "#7C5CF0"), ("Z5", "#5B3BD6")]
-MELHORES = [(1000, "1 km"), (1609, "1 milha"), (5000, "5 km"),
-            (10000, "10 km"), (21098, "Meia maratona")]
 
 
 def esc(x):
@@ -747,7 +745,7 @@ document.querySelectorAll('th.ord').forEach(function(th){
   th.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();ordenar(th);}});});
 
 // exportar CSV (só as linhas visíveis; "sem dado" vira vazio)
-function csvCel(t){t=t.trim();if(t==='sem dado')t='';return '"'+t.replace(/"/g,'""')+'"';}
+function csvCel(t){t=t.trim();if(t==='sem dado')t='';if(/^[=+@]/.test(t)||/^-[^0-9.,]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';}
 document.querySelectorAll('button.csv').forEach(function(b){
   b.addEventListener('click',function(){
     var tab=b.closest('.tb').querySelector('table'),out=[];

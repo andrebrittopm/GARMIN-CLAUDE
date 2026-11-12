@@ -36,8 +36,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
 from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E402
                    ler_chave, ler_token_cache)
-from formatos import (SEM_DADO, hms, km, pace, pace_de_velocidade,  # noqa: E402
-                      segunda)
+from formatos import (MELHORES, SEM_DADO, hms, km, pace,  # noqa: E402
+                      pace_de_velocidade, segunda)
 from visual import pagina  # noqa: E402
 
 BASE = "https://personal.connectapi.garmin.com"
@@ -222,17 +222,20 @@ def buscar_vfc(c, ini, fim):
 
 
 def buscar_atividades(c, ini, fim):
+    """Lê página a página até vir uma página vazia (uma página curta não
+    indica o fim: a Garmin pode devolver menos que o pedido)."""
     out, inicio = [], 0
-    while True:
+    for _ in range(200):
         lote = _lista(c.get("/activitylist-service/activities/search/activities",
                             {"startDate": ini.isoformat(),
                              "endDate": fim.isoformat(),
                              "start": inicio, "limit": PAGINA_ATIVIDADES}))
+        if not lote:
+            break
         out += lote
-        if len(lote) < PAGINA_ATIVIDADES:
-            return out
-        inicio += PAGINA_ATIVIDADES
+        inicio += len(lote)
         time.sleep(0.3)
+    return out
 
 
 def g(d, *chaves):
@@ -303,10 +306,6 @@ def montar_dias(resumos, sonos, vfc=None):
     return [dias[k] for k in sorted(dias)]
 
 
-MELHORES = [(1000, "1 km"), (1609, "1 milha"), (5000, "5 km"),
-            (10000, "10 km"), (21098, "Meia maratona")]
-
-
 def montar_atividades(brutas):
     out = []
     for a in brutas:
@@ -351,8 +350,18 @@ def modo_teste(cli, dia):
     print("Teste concluído. Nenhuma chave nem token foi mostrado ou salvo.")
 
 
+PASTA_DADOS = None   # definida por --pasta-dados ou GARMIN_PAINEL_PASTA_DADOS
+
+
+def pasta_dados():
+    """Onde ficam painel.html e dados_brutos.json (padrão: pasta do programa)."""
+    p = PASTA_DADOS or os.environ.get("GARMIN_PAINEL_PASTA_DADOS") or PASTA
+    os.makedirs(p, exist_ok=True)
+    return p
+
+
 def caminho_armazem():
-    return os.path.join(PASTA, "dados_brutos.json")
+    return os.path.join(pasta_dados(), "dados_brutos.json")
 
 
 def atualizar_armazem(cli, dados, hoje, ini):
@@ -364,15 +373,23 @@ def atualizar_armazem(cli, dados, hoje, ini):
         sonos = buscar_sono(cli, *jan)
         try:
             vfc = buscar_vfc(cli, *jan)
+            armazem.marcar_vfc(dados, jan, True)
         except Erro as e:
             vfc = {}
-            avisos.append(f"VFC não pôde ser lida ({e})")
+            armazem.marcar_vfc(dados, jan, False)     # tenta de novo na próxima vez
+            avisos.append(f"VFC não pôde ser lida ({e}); será tentada de novo "
+                          "na próxima atualização")
         ativ = buscar_atividades(cli, *jan)
         armazem.mesclar(dados, jan, resumos, sonos, vfc, ativ)
         print(f"- resumos: {len(resumos)} · sono: {len(sonos)} · "
               f"VFC: {len(vfc)} · atividades: {len(ativ)}")
     armazem.fechar(dados, hoje, ini)
-    armazem.salvar(caminho_armazem(), dados)
+    try:
+        armazem.salvar(caminho_armazem(), dados)
+    except OSError as e:
+        avisos.append("Não consegui guardar os dados em dados_brutos.json "
+                      f"({type(e).__name__}); o painel foi gerado mesmo assim, "
+                      "mas a próxima atualização buscará tudo de novo")
     return avisos
 
 
@@ -381,7 +398,7 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
     ativ = montar_atividades(brutas)
     pag, omitidos = pagina(montar_dias(resumos, sonos, vfc), ativ, ini, hoje,
                            agora, avisos)
-    caminho = os.path.join(PASTA, "painel.html")
+    caminho = os.path.join(pasta_dados(), "painel.html")
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(pag)
     print(f"Painel gerado: {caminho}")
@@ -412,9 +429,14 @@ def main(argv=None):
     p.add_argument("--so-visual", action="store_true",
                    help="redesenha o painel com os dados já guardados, "
                         "sem consultar a Garmin")
+    p.add_argument("--pasta-dados", metavar="PASTA",
+                   help="onde guardar painel.html e dados_brutos.json (útil para "
+                        "fora de pastas sincronizadas, como o OneDrive)")
     p.add_argument("--esquecer-token", action="store_true",
                    help="apaga o token guardado no cofre do Windows")
     a = p.parse_args(argv)
+    global PASTA_DADOS
+    PASTA_DADOS = a.pasta_dados
     try:
         if a.esquecer_token:
             apagar_token_cache()
@@ -429,9 +451,14 @@ def main(argv=None):
                 raise Erro("Ainda não há dados guardados. Rode uma vez sem "
                            "--so-visual para buscar na Garmin.")
             quando = dt.datetime.fromisoformat(dados["atualizado_em"])
-            aviso = ("Visual redesenhado sem consultar a Garmin: dados de "
-                     f"{quando.strftime('%d/%m/%Y %H:%M')}.")
-            gerar(dados, hoje, ini, quando, [aviso], not a.sem_abrir)
+            avisos = ["Visual redesenhado sem consultar a Garmin: dados de "
+                      f"{quando.strftime('%d/%m/%Y %H:%M')}."]
+            cob = dt.date.fromisoformat(dados["cobertura_ini"])
+            if ini < cob:     # não mostra como "sem dado" o que nunca foi buscado
+                ini = cob
+                avisos.append(f"Os dados guardados começam em {cob.strftime('%d/%m/%Y')}; "
+                              "para um período maior, atualize sem --so-visual.")
+            gerar(dados, hoje, ini, quando, avisos, not a.sem_abrir)
             return 0
         cli = Cliente(ler_chave())
         if a.teste:

@@ -1,7 +1,7 @@
 """Cofre do sistema: chave pessoal e cache do token.
 
 - A CHAVE só é lida (nunca gravada por este programa). Nome: garmin-personal-api-key
-- O TOKEN (vale 24 h) pode ser guardado no cofre do Windows, com o nome
+- O TOKEN (vale 24 h, gravado em UTF-8 para caber no limite de 2560 bytes) pode ser guardado no cofre do Windows, com o nome
   garmin-personal-api-token, para não pedir um novo a cada execução. Nunca é
   gravado em arquivo. Qualquer falha no cache é ignorada (o programa só pede um
   token novo). Para apagar: Gerenciador de Credenciais ou `--esquecer-token`.
@@ -17,25 +17,32 @@ class ErroCofre(Exception):
     """Mensagem segura (sem chave nem token)."""
 
 
-def _win():
+def _estruturas():
+    """Estruturas do Windows (testáveis em qualquer sistema)."""
     import ctypes
     from ctypes import wintypes
 
+    dword = ctypes.c_uint32     # DWORD do Windows = 32 bits (fixo, igual em qualquer sistema)
+
     class FILETIME(ctypes.Structure):
-        _fields_ = [("lo", wintypes.DWORD), ("hi", wintypes.DWORD)]
+        _fields_ = [("lo", dword), ("hi", dword)]
 
     class CREDENTIAL(ctypes.Structure):
         _fields_ = [
-            ("Flags", wintypes.DWORD), ("Type", wintypes.DWORD),
-            ("TargetName", wintypes.LPWSTR), ("Comment", wintypes.LPWSTR),
+            ("Flags", dword), ("Type", dword),
+            ("TargetName", ctypes.c_wchar_p), ("Comment", ctypes.c_wchar_p),
             ("LastWritten", FILETIME),
-            ("CredentialBlobSize", wintypes.DWORD),
+            ("CredentialBlobSize", dword),
             ("CredentialBlob", ctypes.POINTER(ctypes.c_ubyte)),
-            ("Persist", wintypes.DWORD), ("AttributeCount", wintypes.DWORD),
+            ("Persist", dword), ("AttributeCount", dword),
             ("Attributes", ctypes.c_void_p),
-            ("TargetAlias", wintypes.LPWSTR), ("UserName", wintypes.LPWSTR),
+            ("TargetAlias", ctypes.c_wchar_p), ("UserName", ctypes.c_wchar_p),
         ]
+    return ctypes, wintypes, CREDENTIAL
 
+
+def _win():
+    ctypes, wintypes, CREDENTIAL = _estruturas()
     adv = ctypes.WinDLL("advapi32", use_last_error=True)
     adv.CredReadW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                               ctypes.POINTER(ctypes.POINTER(CREDENTIAL))]
@@ -48,7 +55,10 @@ def _win():
     return ctypes, adv, CREDENTIAL
 
 
-def _ler_win(nome):
+LIMITE_SEGREDO = 2560   # bytes que o cofre do Windows aceita por credencial
+
+
+def _ler_win(nome, codificacao="utf-16-le"):
     ctypes, adv, CREDENTIAL = _win()
     ptr = ctypes.POINTER(CREDENTIAL)()
     if not adv.CredReadW(nome, 1, 0, ctypes.byref(ptr)):
@@ -56,14 +66,16 @@ def _ler_win(nome):
     try:
         c = ptr.contents
         bruto = ctypes.string_at(c.CredentialBlob, c.CredentialBlobSize)
-        return bruto.decode("utf-16-le").strip()
+        return bruto.decode(codificacao).strip()
     finally:
         adv.CredFree(ptr)
 
 
-def _gravar_win(nome, valor):
+def _gravar_win(nome, valor, codificacao="utf-16-le"):
     ctypes, adv, CREDENTIAL = _win()
-    dados = valor.encode("utf-16-le")
+    dados = valor.encode(codificacao)
+    if len(dados) > LIMITE_SEGREDO:
+        return False
     buf = (ctypes.c_ubyte * len(dados)).from_buffer_copy(dados)
     c = CREDENTIAL()
     c.Type = 1
@@ -102,14 +114,14 @@ def ler_chave():
 def ler_token_cache():
     """Texto guardado ou None. Nunca levanta erro."""
     try:
-        return _ler_win(NOME_TOKEN) if sys.platform == "win32" else None
+        return _ler_win(NOME_TOKEN, "utf-8") if sys.platform == "win32" else None
     except Exception:
         return None
 
 
 def gravar_token_cache(valor):
     try:
-        return _gravar_win(NOME_TOKEN, valor) if sys.platform == "win32" else False
+        return _gravar_win(NOME_TOKEN, valor, "utf-8") if sys.platform == "win32" else False
     except Exception:
         return False
 

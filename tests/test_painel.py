@@ -53,7 +53,7 @@ def ativ_json(i, n, t, dist, dur):
                  fastestSplit_1000=dur / dist * 1000 * 0.93, fastestSplit_5000=dur / dist * 5000 * 0.97 if dist >= 5000 else None)
     return r
 
-class Estado: rejeitar_tokens_velhos = False
+class Estado: hrv_falha = False
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def _json(self, o, code=200):
@@ -70,6 +70,7 @@ class H(BaseHTTPRequestHandler):
         if "dailysummaries" in p: return self._json({"data": [resumo(x) for x in rng(q["startDate"], q["endDate"])]})
         if "dailySleep" in p: return self._json([sono(x) for x in rng(q["startDate"], q["endDate"])])
         if "/hrv-service/hrv/daily/" in p:
+            if Estado.hrv_falha: return self._json({}, 403)
             if SEM_VFC: return self._json({"hrvSummaries": []})
             a, b = p.rsplit("/", 2)[-2:]
             return self._json({"hrvSummaries": [{"calendarDate": x.isoformat(), "lastNightAvg": 40 + ((HOJE - x).days * 4) % 30}
@@ -160,7 +161,47 @@ if __name__ == "__main__":
         def get(s, caminho, params):
             s.chamadas.append(params["start"]); assert params["limit"] == 20
             return [{"activityId": k} for k in range(params["start"], min(params["start"] + 20, 45))]
-    f = Falso(); assert len(gp.buscar_atividades(f, d(5), HOJE)) == 45 and f.chamadas == [0, 20, 40]
+    f = Falso(); assert len(gp.buscar_atividades(f, d(5), HOJE)) == 45 and f.chamadas == [0, 20, 40, 45]
+
+
+    # 9) VFC que falha: avisa, lembra de refazer e recupera na próxima execução
+    for f_ in ("dados_brutos.json",): os.remove(os.path.join(gp.PASTA, f_))
+    Estado.hrv_falha = True
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0 and "VFC não pôde ser lida" in out, out
+    st = armazem.carregar(os.path.join(gp.PASTA, "dados_brutos.json"))
+    assert st.get("vfc_pendente_ini") and not st["vfc"]
+    Estado.hrv_falha = False
+    rc, out = rodar(["--sem-abrir"]); assert rc == 0, out
+    st = armazem.carregar(os.path.join(gp.PASTA, "dados_brutos.json"))
+    assert "vfc_pendente_ini" not in st and len(st["vfc"]) > 20, "VFC deveria ter sido refeita para todo o período"
+
+    # 10) gravação bloqueada (OneDrive): painel sai mesmo assim, com aviso
+    orig = armazem.salvar
+    def bloqueado(*a, **k): raise PermissionError("bloqueado")
+    armazem.salvar = bloqueado
+    rc, out = rodar(["--sem-abrir"]); armazem.salvar = orig
+    assert rc == 0 and "Não consegui guardar os dados" in out and "Painel gerado" in out, out
+
+    # 11) --so-visual com período maior que o guardado: avisa e limita
+    rc, out = rodar(["--so-visual", "--dias", "90", "--sem-abrir"]); assert rc == 0, out
+    assert "dados guardados começam em" in painel()
+
+    # 12) lista vazia da Garmin não apaga atividades guardadas
+    st = armazem.carregar(os.path.join(gp.PASTA, "dados_brutos.json")); antes = len(st["atividades"])
+    armazem.mesclar(st, (d(30), HOJE), [], [], {}, []); assert len(st["atividades"]) == antes > 0
+
+    # 13) estrutura do cofre do Windows: mesmo tamanho/posição da CREDENTIALW de 64 bits
+    import cofre, ctypes
+    _, _, CRED = cofre._estruturas()
+    assert ctypes.sizeof(CRED) == 80 and CRED.CredentialBlob.offset == 40 and CRED.UserName.offset == 72
+    assert cofre._gravar_win.__defaults__ == ("utf-16-le",) and cofre.LIMITE_SEGREDO == 2560
+
+    # 14) --pasta-dados: arquivos vão para onde o usuário escolher
+    import tempfile
+    alvo = tempfile.mkdtemp()
+    rc, out = rodar(["--sem-abrir", "--pasta-dados", alvo]); assert rc == 0, out
+    assert sorted(os.listdir(alvo)) == ["dados_brutos.json", "painel.html"]
+    gp.PASTA_DADOS = None
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)

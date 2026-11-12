@@ -19,6 +19,11 @@ _ROTULO = {k: r for k, r, _ in ESPORTES}
 _COR = {k: c for k, _, c in ESPORTES}
 
 
+# Melhores esforços: (metros, rótulo). Campo da Garmin: fastestSplit_<metros>.
+MELHORES = [(1000, "1 km"), (1609, "1 milha"), (5000, "5 km"),
+            (10000, "10 km"), (21098, "Meia maratona")]
+
+
 def grupo(tipo):
     t = (tipo or "").lower()
     if "running" in t:

@@ -9,6 +9,7 @@ O arquivo tem dados de saúde: fica só no seu computador (fora do GitHub).
 import datetime as dt
 import json
 import os
+import time
 
 VERSAO = 1
 RECENTE_DIAS = 10     # sempre refaz os últimos dias (sono e VFC chegam depois)
@@ -31,11 +32,20 @@ def carregar(caminho):
     return vazio()
 
 
-def salvar(caminho, dados):
+def salvar(caminho, dados, tentativas=4):
+    """Grava com segurança. Pastas sincronizadas (OneDrive) podem bloquear o
+    arquivo por instantes, então tenta de novo antes de desistir (OSError)."""
     tmp = caminho + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False)
-    os.replace(tmp, caminho)
+    for n in range(tentativas):
+        try:
+            os.replace(tmp, caminho)
+            return
+        except OSError:
+            if n == tentativas - 1:
+                raise
+            time.sleep(0.5 * (n + 1))
 
 
 def planejar(dados, hoje, ini_painel):
@@ -46,6 +56,9 @@ def planejar(dados, hoje, ini_painel):
     cob, ult = dt.date.fromisoformat(cob), dt.date.fromisoformat(ult)
     ini_recente = max(cob, min(hoje - dt.timedelta(days=RECENTE_DIAS - 1),
                                ult - dt.timedelta(days=SOBREPOSICAO)))
+    pend = dados.get("vfc_pendente_ini")      # VFC que falhou numa execução anterior
+    if pend:
+        ini_recente = min(ini_recente, max(cob, dt.date.fromisoformat(pend)))
     jan = [(ini_recente, hoje)]
     if ini_painel < cob:
         jan.insert(0, (ini_painel, cob - dt.timedelta(days=1)))
@@ -68,12 +81,25 @@ def mesclar(dados, janela, resumos, sonos, vfc, atividades):
         if isinstance(s, dict) and s.get("calendarDate"):
             dados["sonos"][s["calendarDate"]] = s
     dados["vfc"].update(vfc)
-    # atividades: o que a Garmin devolveu para a janela substitui o guardado
-    for k in [k for k, v in dados["atividades"].items() if a <= _data_ativ(v) <= b]:
-        del dados["atividades"][k]
+    # atividades: o que a Garmin devolveu para a janela substitui o guardado.
+    # Lista vazia não apaga nada: pode ser falha passageira, e é mais seguro
+    # manter o que já estava guardado.
+    if atividades:
+        for k in [k for k, v in dados["atividades"].items() if a <= _data_ativ(v) <= b]:
+            del dados["atividades"][k]
     for x in atividades:
         if isinstance(x, dict) and x.get("activityId") is not None:
             dados["atividades"][str(x["activityId"])] = x
+
+
+def marcar_vfc(dados, janela, ok):
+    """Lembra de refazer a VFC se ela falhou; limpa quando a janela refeita deu certo."""
+    pend = dados.get("vfc_pendente_ini")
+    if not ok:
+        ini = janela[0].isoformat()
+        dados["vfc_pendente_ini"] = min(pend, ini) if pend else ini
+    elif pend and janela[0].isoformat() <= pend and janela[1] >= dt.date.today():
+        dados.pop("vfc_pendente_ini", None)
 
 
 def fechar(dados, hoje, ini_painel):
