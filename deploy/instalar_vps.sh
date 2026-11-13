@@ -29,6 +29,7 @@ systemd-creds setup >/dev/null 2>&1 || true
 echo "3/5 Serviços"
 install -m 0644 "$AQUI"/deploy/painel-garmin.service "$AQUI"/deploy/painel-garmin-atualizar.service \
   "$AQUI"/deploy/painel-garmin-atualizar.timer /etc/systemd/system/
+bash "$AQUI/deploy/ligar_credenciais.sh"
 systemctl daemon-reload
 systemctl enable --now painel-garmin.service
 systemctl enable --now painel-garmin-atualizar.timer
@@ -42,7 +43,7 @@ sleep 2
 systemctl is-active painel-garmin.service painel-garmin-atualizar.timer || true
 echo
 echo "Pronto. Próximos passos (veja deploy/LEIA-ME.md):"
-echo "  1) bash $AQUI/deploy/guardar_chave.sh garmin"
+echo "  1) bash $AQUI/deploy/guardar_chave.sh garmin   (ou, do Windows: py garmin_painel.py --enviar-chave garmin --para root@IP)"
 echo "  2) bash $AQUI/deploy/rodar.sh --teste       (confere a chave com 1 dia de dados)"
 echo "  3) bash $AQUI/deploy/rodar.sh --sem-abrir   (primeira atualização completa)"
 echo "  4) bash $AQUI/deploy/rodar.sh --endereco    (mostra o endereço do painel)"

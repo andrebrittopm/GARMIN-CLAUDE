@@ -12,8 +12,8 @@ StateDirectory=painel-garmin
 StateDirectoryMode=0750
 Environment=GARMIN_PAINEL_PASTA_DADOS=/var/lib/painel-garmin
 Environment=PYTHONDONTWRITEBYTECODE=1
-ImportCredential=garmin-personal-api-key
-ImportCredential=intervals-icu-api-key
+# as chaves (criptografadas) entram por LoadCredentialEncrypted= em arquivos .service.d/ criados por
+# deploy/ligar_credenciais.sh, só para as chaves que existem
 ExecStart=/usr/bin/python3 /opt/painel-garmin/garmin_painel.py --sem-abrir
 TimeoutStartSec=15min
 NoNewPrivileges=yes

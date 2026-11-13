@@ -152,9 +152,9 @@ srv = open(os.path.join(D, "painel-garmin.service"), encoding="utf-8").read()
 atu = open(os.path.join(D, "painel-garmin-atualizar.service"), encoding="utf-8").read()
 tim = open(os.path.join(D, "painel-garmin-atualizar.timer"), encoding="utf-8").read()
 for u in (srv, atu):
-    for exigido in ("User=painel", "NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes",
-                    "ImportCredential=garmin-personal-api-key", "ImportCredential=intervals-icu-api-key", "MemoryMax="):
+    for exigido in ("User=painel", "NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes", "MemoryMax="):
         assert exigido in u, exigido
+    assert "ImportCredential" not in u, "o ImportCredential não abre credenciais criptografadas no systemd 255 (testado na VPS)"
     assert "User=root" not in u and "ReadWritePaths=/opt" not in u
 assert "--servir --remoto --sem-abrir --porta 8765" in srv and "Restart=on-failure" in srv
 assert "Type=oneshot" in atu and "--sem-abrir" in atu and "--servir" not in atu
@@ -162,6 +162,27 @@ assert "OnCalendar=" in tim and "Persistent=true" in tim
 inst = open(os.path.join(D, "instalar_vps.sh"), encoding="utf-8").read()
 assert "tailscale serve --bg --https=8443 http://127.0.0.1:8765" in inst and "chown -R root:root" in inst
 assert not re.search(r"systemctl\s+\S+\s+nginx|/etc/nginx|ufw |iptables", inst), "o instalador não toca no nginx nem no firewall"
+for f in ("ligar_credenciais.sh",):
+    assert os.access(os.path.join(D, f), os.X_OK) and subprocess.run(["bash", "-n", os.path.join(D, f)]).returncode == 0
+rod = open(os.path.join(D, "rodar.sh"), encoding="utf-8").read()
+assert "LoadCredentialEncrypted=$ID:/etc/credstore.encrypted/$ID.cred" in rod and "ImportCredential" not in rod
+# ligar_credenciais.sh de verdade, em pastas temporárias: cria só para as chaves que existem e remove as que sumiram
+with tempfile.TemporaryDirectory() as raiz:
+    cs, un = os.path.join(raiz, "cred"), os.path.join(raiz, "unit"); os.makedirs(cs); os.makedirs(un)
+    env = dict(os.environ, PAINEL_TESTE="1", PAINEL_CREDSTORE=cs, PAINEL_UNIT_DIR=un)
+    def ligar(): r = subprocess.run(["bash", os.path.join(D, "ligar_credenciais.sh")], env=env, capture_output=True, text=True); assert r.returncode == 0, r.stderr
+    def conf(u, i): return os.path.join(un, u + ".d", f"cred-{i}.conf")
+    ligar(); assert not os.path.exists(conf("painel-garmin.service", "garmin-personal-api-key")), "sem chave: nada é criado"
+    open(os.path.join(cs, "garmin-personal-api-key.cred"), "w").write("x"); ligar()
+    for u in ("painel-garmin.service", "painel-garmin-atualizar.service"):
+        txt = open(conf(u, "garmin-personal-api-key")).read()
+        assert txt == f"[Service]\nLoadCredentialEncrypted=garmin-personal-api-key:{cs}/garmin-personal-api-key.cred\n", txt
+        assert not os.path.exists(conf(u, "intervals-icu-api-key"))
+    open(os.path.join(cs, "intervals-icu-api-key.cred"), "w").write("x"); ligar()
+    assert os.path.exists(conf("painel-garmin.service", "intervals-icu-api-key"))
+    os.remove(os.path.join(cs, "intervals-icu-api-key.cred")); ligar()
+    assert not os.path.exists(conf("painel-garmin.service", "intervals-icu-api-key")) and os.path.exists(conf("painel-garmin.service", "garmin-personal-api-key"))
 gk = open(os.path.join(D, "guardar_chave.sh"), encoding="utf-8").read()
+assert "ligar_credenciais.sh" in gk and "ligar_credenciais.sh" in inst and "ligar_credenciais.sh" in open(os.path.join(D, "atualizar_vps.sh"), encoding="utf-8").read()
 assert "read -r -s" in gk and "systemd-creds encrypt" in gk and "printf '%s' \"$K\"" in gk and "echo \"$K\"" not in gk
 print("TESTES DO MODO REMOTO PASSARAM")

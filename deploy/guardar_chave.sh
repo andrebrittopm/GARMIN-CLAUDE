@@ -30,4 +30,4 @@ unset K
 chmod 0600 "$ARQ"
 systemd-creds decrypt --name="$ID" "$ARQ" - >/dev/null 2>&1 || erro "a chave foi gravada, mas não consegui abrir de volta."
 echo "OK: chave '$1' guardada criptografada em $ARQ ($(stat -c %s "$ARQ") bytes)."
-systemctl try-restart painel-garmin.service 2>/dev/null || true
+bash "$(dirname "${BASH_SOURCE[0]}")/ligar_credenciais.sh"
