@@ -174,6 +174,12 @@ def executar():
         ok(f"Rotas guardadas: {com} com trilha, {sum(1 for v in rg.values() if v.get('sem_gps'))} sem GPS, "
            f"{sum(1 for v in rg.values() if v.get('falhou'))} com falha")
 
+    # --- agendamento e serviço (Linux/VPS)
+    if sys.platform.startswith("linux") and os.path.exists("/etc/systemd/system/painel-garmin.service"):
+        for unidade in ("painel-garmin.service", "painel-garmin-atualizar.timer"):
+            r = subprocess.run(["systemctl", "is-active", unidade], capture_output=True, text=True)
+            (ok if r.stdout.strip() == "active" else atencao)(f"{unidade}: {r.stdout.strip() or 'desconhecido'}")
+
     # --- tarefa agendada (Windows)
     if sys.platform == "win32":
         existe = comando_ok(["schtasks", "/Query", "/TN", NOME_TAREFA])

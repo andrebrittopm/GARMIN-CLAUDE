@@ -1,0 +1,11 @@
+[Unit]
+Description=Painel Garmin: atualização a cada 6 horas
+
+[Timer]
+# horário local da VPS (America/Campo_Grande); Persistent recupera uma execução perdida
+OnCalendar=*-*-* 01,07,13,19:07:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

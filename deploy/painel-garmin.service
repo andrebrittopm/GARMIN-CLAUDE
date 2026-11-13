@@ -1,0 +1,34 @@
+[Unit]
+Description=Painel Garmin (servidor local, entregue aos seus aparelhos pelo Tailscale)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=painel
+Group=painel
+WorkingDirectory=/opt/painel-garmin
+StateDirectory=painel-garmin
+StateDirectoryMode=0750
+Environment=GARMIN_PAINEL_PASTA_DADOS=/var/lib/painel-garmin
+Environment=PYTHONDONTWRITEBYTECODE=1
+# chaves criptografadas em /etc/credstore.encrypted (veja deploy/guardar_chave.sh)
+ImportCredential=garmin-personal-api-key
+ImportCredential=intervals-icu-api-key
+ExecStart=/usr/bin/python3 /opt/painel-garmin/garmin_painel.py --servir --remoto --sem-abrir --porta 8765
+Restart=on-failure
+RestartSec=10
+# o programa não pode alterar a si mesmo nem ver o resto do sistema
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target

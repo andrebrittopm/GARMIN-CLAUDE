@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Guarda uma chave CRIPTOGRAFADA pelo sistema (systemd-creds). Você digita/cola a chave aqui;
+# ela não aparece na tela, não vai para o histórico e não fica em arquivo legível.
+# Uso: bash guardar_chave.sh garmin      ou      bash guardar_chave.sh intervals
+set -euo pipefail
+erro() { echo "ERRO: $*" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || exec sudo bash "$0" "$@"
+case "${1:-}" in
+  garmin) ID=garmin-personal-api-key ;;
+  intervals) ID=intervals-icu-api-key ;;
+  *) erro "use: guardar_chave.sh garmin   ou   guardar_chave.sh intervals" ;;
+esac
+read -r -s -p "Cole a chave ($1) e aperte Enter (nada aparece na tela): " K
+echo
+[ "${#K}" -ge 10 ] || erro "isso não parece uma chave (muito curta). Nada foi guardado."
+case "$K" in *[[:space:]]*) erro "a chave não pode ter espaços. Nada foi guardado." ;; esac
+ARQ="/etc/credstore.encrypted/$ID.cred"
+install -d -m 0700 /etc/credstore.encrypted
+printf '%s' "$K" | systemd-creds encrypt --name="$ID" - "$ARQ" || { unset K; erro "não consegui criptografar."; }
+unset K
+chmod 0600 "$ARQ"
+systemd-creds decrypt --name="$ID" "$ARQ" - >/dev/null 2>&1 || erro "a chave foi gravada, mas não consegui abrir de volta."
+echo "OK: chave '$1' guardada criptografada em $ARQ ($(stat -c %s "$ARQ") bytes)."
+systemctl try-restart painel-garmin.service 2>/dev/null || true

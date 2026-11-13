@@ -1,0 +1,29 @@
+[Unit]
+Description=Painel Garmin: busca dados novos (Garmin e intervals.icu) e redesenha o painel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=painel
+Group=painel
+WorkingDirectory=/opt/painel-garmin
+StateDirectory=painel-garmin
+StateDirectoryMode=0750
+Environment=GARMIN_PAINEL_PASTA_DADOS=/var/lib/painel-garmin
+Environment=PYTHONDONTWRITEBYTECODE=1
+ImportCredential=garmin-personal-api-key
+ImportCredential=intervals-icu-api-key
+ExecStart=/usr/bin/python3 /opt/painel-garmin/garmin_painel.py --sem-abrir
+TimeoutStartSec=15min
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=600M

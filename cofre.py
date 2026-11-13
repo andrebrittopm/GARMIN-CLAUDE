@@ -6,6 +6,7 @@
   gravado em arquivo. Qualquer falha no cache é ignorada (o programa só pede um
   token novo). Para apagar: Gerenciador de Credenciais ou `--esquecer-token`.
 """
+import os
 import subprocess
 import sys
 
@@ -93,6 +94,21 @@ def _apagar_win(nome):
     return bool(adv.CredDeleteW(nome, 1, 0))
 
 
+# ------------------------------------------------- Linux (servidor / VPS) ---
+def _credencial_linux(nome):
+    """Segredo entregue pelo systemd ao serviço (ImportCredential=): fica em
+    $CREDENTIALS_DIRECTORY/<nome>, só visível para o próprio serviço. No disco ele está
+    criptografado (/etc/credstore.encrypted). Devolve None se não houver."""
+    base = os.environ.get("CREDENTIALS_DIRECTORY")
+    if not base or "/" in nome or ".." in nome:
+        return None
+    try:
+        with open(os.path.join(base, nome), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 # ------------------------------------------------------------------ chave ---
 def ler_chave():
     """Lê a chave do cofre do sistema. Devolve texto; nunca imprime."""
@@ -108,7 +124,13 @@ def ler_chave():
         if r.returncode != 0 or not r.stdout.strip():
             raise ErroCofre(f"Não achei a chave nas Chaves do Mac (nome '{NOME_CHAVE}').")
         return r.stdout.strip()
-    raise ErroCofre("Sistema não suportado: use Windows ou Mac.")
+    if sys.platform.startswith("linux"):
+        v = _credencial_linux(NOME_CHAVE)
+        if not v:
+            raise ErroCofre(f"Não achei a chave da Garmin ('{NOME_CHAVE}') entre as credenciais do serviço. "
+                            "Guarde-a com deploy/guardar_chave.sh (veja deploy/LEIA-ME.md).")
+        return v
+    raise ErroCofre("Sistema não suportado: use Windows, Mac ou Linux (servidor).")
 
 
 # ------------------------------------------------------------ cache do token -
@@ -138,7 +160,11 @@ def apagar_token_cache():
 def ler_chave_intervals():
     """Chave do intervals.icu ou None se não foi guardada. Nunca imprime."""
     try:
-        return (_ler_win(NOME_INTERVALS) or None) if sys.platform == "win32" else None
+        if sys.platform == "win32":
+            return _ler_win(NOME_INTERVALS) or None
+        if sys.platform.startswith("linux"):
+            return _credencial_linux(NOME_INTERVALS)
+        return None
     except Exception:
         return None
 

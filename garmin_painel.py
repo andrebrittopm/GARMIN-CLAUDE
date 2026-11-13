@@ -733,6 +733,31 @@ def guardar_chave_intervals(pedir=None):
     return 0
 
 
+def nome_tailscale():
+    """Nome do aparelho na rede Tailscale (ex.: painel-garmin.tail1234.ts.net) ou None."""
+    import subprocess
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=20)
+        nome = (json.loads(r.stdout).get("Self") or {}).get("DNSName") or ""
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    nome = nome.rstrip(".").lower()
+    return nome if nome.endswith(".ts.net") else None
+
+
+def mostrar_endereco():
+    """Endereço do painel na VPS (usa a senha fixa do modo remoto). A senha aparece só aqui."""
+    import servidor
+    nome = os.environ.get("PAINEL_HOST") or nome_tailscale()
+    if not nome:
+        raise Erro("Não consegui descobrir o nome do Tailscale. Defina PAINEL_HOST=nome.rede.ts.net e rode de novo.")
+    cam = os.path.join(pasta_dados(), servidor.ARQ_TOKEN)
+    if not os.path.exists(cam):
+        raise Erro("O painel ainda não foi iniciado nesta VPS (a senha é criada na primeira vez).")
+    print(f"https://{nome}:{os.environ.get('PAINEL_PORTA_HTTPS', '8443')}/?t={servidor.token_persistente(pasta_dados())}")
+    return 0
+
+
 def testar_intervals():
     from cofre import ler_chave_intervals
     chave = ler_chave_intervals()
@@ -823,6 +848,11 @@ def main(argv=None):
                    help="abre o painel com edição de provas e perfil (servidor só neste "
                         "computador); use o atalho abrir_painel.bat")
     p.add_argument("--porta", type=int, metavar="N", help="porta do --servir (padrão 8765)")
+    p.add_argument("--remoto", action="store_true",
+                   help="com --servir, para a VPS: senha fixa, porta exata e aceita o nome do Tailscale (*.ts.net); "
+                        "continua escutando só em 127.0.0.1")
+    p.add_argument("--endereco", action="store_true",
+                   help="mostra o endereço completo do painel na VPS (com a senha) para você abrir pelo Tailscale")
     p.add_argument("--rotas", action="store_true",
                    help="baixa as trilhas de GPS de TODAS as corridas que ainda faltam "
                         "(a atualização normal baixa só algumas por vez)")
@@ -887,6 +917,8 @@ def main(argv=None):
             return 0
         if a.restaurar_backup:
             return backup.restaurar(pasta_dados(), a.restaurar_backup, True)
+        if a.endereco:
+            return mostrar_endereco()
         if a.guardar_chave_intervals:
             return guardar_chave_intervals()
         if a.intervals_atleta:
@@ -931,8 +963,8 @@ def main(argv=None):
         if a.servir:
             import servidor
             return servidor.servir(pasta_dados(), lambda: redesenhar(dias, False),
-                                   a.porta or 8765, not a.sem_abrir, competicoes_sem_logo,
-                                   lambda: executar_atualizacao(dias, False))
+                                   a.porta or 8765, not a.sem_abrir and not a.remoto, competicoes_sem_logo,
+                                   lambda: executar_atualizacao(dias, False), remoto=a.remoto)
         cli = Cliente(ler_chave())
         if a.teste_rota:
             modo_teste_rota(cli, a.data)

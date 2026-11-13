@@ -202,6 +202,10 @@ Clique no título de qualquer cartão ou tabela para recolher (e de novo para ab
 **▴ Recolher tudo / ▾ Expandir tudo**, ao lado de "Atualizar agora", faz isso com todas de uma vez.
 O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo abre sozinho.
 
+### Painel na VPS (24 horas, pelo Tailscale)
+O passo a passo está em `deploy/LEIA-ME.md`. Resumo: o painel roda num usuário comum da VPS, a chave fica criptografada
+pelo sistema e o acesso é só pelos seus aparelhos na rede Tailscale. Nenhuma porta nova fica aberta na internet.
+
 ### Links do Strava e do Garmin Connect no topo
 Dois botões aparecem à direita do seu nome. Preencha em **✎ Provas e perfil > Perfil** (campos "Link do seu perfil...") ou
 no `perfil.txt`, com as linhas `strava: https://www.strava.com/athletes/SEU_NUMERO` e

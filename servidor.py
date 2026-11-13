@@ -17,6 +17,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import threading
 import time
 import webbrowser
@@ -33,6 +34,10 @@ MARCADOR = "<!--EDITOR_CFG-->"
 LIMITE_CORPO = 5_000_000
 INTERVALO_ATUALIZACAO_S = 60       # no mínimo 1 minuto entre atualizações pedidas pelo painel
 ERROS_SEGUROS = {"Erro", "ErroCofre", "ErroRota"}   # mensagens que nunca têm segredo
+ARQ_TOKEN = "token_painel.txt"
+# modo remoto (atrás do Tailscale): o navegador chega por https://<nome>.<rede>.ts.net[:porta]
+HOST_TAILNET = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.ts\.net(:\d{1,5})?")
+ORIGEM_TAILNET = re.compile(r"https://" + HOST_TAILNET.pattern)
 CSP = ("default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; "
        "script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
        "frame-ancestors 'none'")
@@ -42,21 +47,40 @@ PAGINA_SEM_SENHA = """<!doctype html><meta charset="utf-8"><title>Painel Garmin<
 o endereço com a senha desta sessão.</p></body>"""
 
 
-def criar(pasta, regerar, porta=8765, token=None, garmin=None, atualizar=None):
-    """Devolve (httpd, token, porta). `regerar()` recria o painel.html sem consultar a Garmin."""
+def token_persistente(pasta):
+    """Senha fixa do modo remoto: gravada em token_painel.txt (só o dono lê), criada na primeira vez."""
+    cam = os.path.join(pasta, ARQ_TOKEN)
+    try:
+        with open(cam, encoding="utf-8") as f:
+            t = f.read().strip()
+        if len(t) >= 20 and re.fullmatch(r"[A-Za-z0-9_-]+", t):
+            return t
+    except OSError:
+        pass
+    t = secrets.token_urlsafe(24)
+    fd = os.open(cam, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(t + "\n")
+    return t
+
+
+def criar(pasta, regerar, porta=8765, token=None, garmin=None, atualizar=None, remoto=False):
+    """Devolve (httpd, token, porta). `regerar()` recria o painel.html sem consultar a Garmin.
+    remoto=True: porta exata (o Tailscale aponta para ela) e aceita o nome *.ts.net no Host/Origin;
+    continua escutando só em 127.0.0.1 (quem entrega aos seus aparelhos é o Tailscale)."""
     token = token or secrets.token_urlsafe(24)
     trava = threading.Lock()
     httpd = None
     ultimo_erro = None
-    for p in range(porta, porta + 21):
+    for p in range(porta, porta + (1 if remoto else 21)):
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", p), _handler(pasta, regerar, token, trava, p, garmin, atualizar))
+            httpd = ThreadingHTTPServer(("127.0.0.1", p), _handler(pasta, regerar, token, trava, p, garmin, atualizar, remoto))
             porta = p
             break
         except OSError as e:
             ultimo_erro = e
     if httpd is None:
-        raise OSError(f"Não consegui abrir uma porta entre {porta} e {porta + 20}: {ultimo_erro}")
+        raise OSError(f"Não consegui abrir a porta {porta}" + ("" if remoto else f" (nem até {porta + 20})") + f": {ultimo_erro}")
     return httpd, token, porta
 
 
@@ -110,7 +134,7 @@ def _salvar_config(pasta, d):
     return {"ok": True}
 
 
-def _handler(pasta, regerar, token, trava, porta, garmin=None, atualizar=None):
+def _handler(pasta, regerar, token, trava, porta, garmin=None, atualizar=None, remoto=False):
     hosts = {f"127.0.0.1:{porta}", f"localhost:{porta}"}
     origens = {f"http://127.0.0.1:{porta}", f"http://localhost:{porta}"}
 
@@ -174,10 +198,11 @@ def _handler(pasta, regerar, token, trava, porta, garmin=None, atualizar=None):
 
         def _seguro(self):
             """Host e Origin esperados."""
-            if self.headers.get("Host", "") not in hosts:
+            host = self.headers.get("Host", "")
+            if host not in hosts and not (remoto and HOST_TAILNET.fullmatch(host)):
                 return False
             org = self.headers.get("Origin")
-            return org is None or org in origens
+            return org is None or org in origens or bool(remoto and ORIGEM_TAILNET.fullmatch(org))
 
         def _autenticado(self):
             t = self.headers.get("X-Token", "")
@@ -305,14 +330,18 @@ def _handler(pasta, regerar, token, trava, porta, garmin=None, atualizar=None):
     return H
 
 
-def servir(pasta, regerar, porta=8765, abrir=True, garmin=None, atualizar=None):
-    httpd, token, porta = criar(pasta, regerar, porta, garmin=garmin, atualizar=atualizar)
-    url = f"http://127.0.0.1:{porta}/?t={token}"
-    print("Painel com edição ligado (só neste computador).")
-    print(f"Endereço: {url}")
-    print("Para editar provas e perfil, use o botão ✎ no painel. Para encerrar, feche esta janela (ou Ctrl+C).")
-    if abrir:
-        webbrowser.open(url)
+def servir(pasta, regerar, porta=8765, abrir=True, garmin=None, atualizar=None, remoto=False):
+    token = token_persistente(pasta) if remoto else None
+    httpd, token, porta = criar(pasta, regerar, porta, token=token, garmin=garmin, atualizar=atualizar, remoto=remoto)
+    if remoto:       # a senha NÃO vai para o registro do sistema; use --endereco para ver o endereço completo
+        print(f"Painel (modo remoto) ligado em 127.0.0.1:{porta}; acesso só pelo Tailscale. Endereço: py garmin_painel.py --endereco", flush=True)
+    else:
+        url = f"http://127.0.0.1:{porta}/?t={token}"
+        print("Painel com edição ligado (só neste computador).")
+        print(f"Endereço: {url}")
+        print("Para editar provas e perfil, use o botão ✎ no painel. Para encerrar, feche esta janela (ou Ctrl+C).")
+        if abrir:
+            webbrowser.open(url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
