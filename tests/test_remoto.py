@@ -94,6 +94,31 @@ with tempfile.TemporaryDirectory() as pasta:
             if v is None: os.environ.pop(k, None)
             else: os.environ[k] = v
 
+# 4b) --copiar-chave: copia sem imprimir a chave; sem chave, erro claro
+import cofre as c_
+guardada = {}
+orig = (gp.ler_chave, c_.ler_chave_intervals, c_.copiar_para_area_de_transferencia, c_.limpar_area_de_transferencia)
+gp.ler_chave = lambda: SEGREDO
+c_.ler_chave_intervals = lambda: None
+c_.copiar_para_area_de_transferencia = lambda v: guardada.update(v=v)
+limpou_ = []; c_.limpar_area_de_transferencia = lambda: limpou_.append(1)
+try:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf): rc = gp.main(["--copiar-chave", "garmin"])
+    assert rc == 0 and guardada["v"] == SEGREDO and SEGREDO not in buf.getvalue() and str(len(SEGREDO)) in buf.getvalue()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf): rc = gp.main(["--copiar-chave", "intervals"])
+    assert rc == 1 and "Não achei a chave 'intervals'" in buf.getvalue()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf): rc = gp.main(["--limpar-area"])
+    assert rc == 0 and limpou_ == [1]
+finally:
+    gp.ler_chave, c_.ler_chave_intervals, c_.copiar_para_area_de_transferencia, c_.limpar_area_de_transferencia = orig
+# a cópia real vai pela entrada padrão do PowerShell, nunca na linha de comando
+fonte = open(os.path.join(RAIZ, "cofre.py"), encoding="utf-8").read()
+trecho = fonte[fonte.index("def copiar_para_area_de_transferencia"):fonte.index("def limpar_area_de_transferencia")]
+assert "input=texto.encode" in trecho and "-Value $t" in trecho and "-Value texto" not in trecho
+
 # 5) arquivos de instalação: sintaxe, travas de segurança e nenhum segredo
 D = os.path.join(RAIZ, "deploy")
 for f in ("instalar_vps.sh", "guardar_chave.sh", "rodar.sh", "atualizar_vps.sh"):

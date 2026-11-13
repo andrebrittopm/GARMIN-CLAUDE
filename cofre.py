@@ -195,6 +195,22 @@ def ler_area_de_transferencia():
     return r.stdout.decode("utf-8", "replace").strip()
 
 
+def copiar_para_area_de_transferencia(texto):
+    """Copia o texto para a área de transferência (Windows). O texto vai pela entrada padrão do
+    PowerShell, nunca na linha de comando (onde outros programas poderiam vê-lo)."""
+    if sys.platform != "win32":
+        raise ErroCofre("Copiar para a área de transferência só está pronto para o Windows.")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "[Console]::InputEncoding=[Text.Encoding]::UTF8; "
+                            "$t=[Console]::In.ReadToEnd(); Set-Clipboard -Value $t"],
+                           input=texto.encode("utf-8"), capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        raise ErroCofre("Não consegui usar a área de transferência.") from None
+    if r.returncode != 0:
+        raise ErroCofre("Não consegui copiar para a área de transferência.")
+
+
 def limpar_area_de_transferencia():
     try:
         subprocess.run(["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value ' '"],

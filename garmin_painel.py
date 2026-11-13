@@ -733,6 +733,18 @@ def guardar_chave_intervals(pedir=None):
     return 0
 
 
+def copiar_chave(qual):
+    """Copia a chave do cofre para a área de transferência. Imprime só o tamanho, nunca a chave."""
+    from cofre import copiar_para_area_de_transferencia, ler_chave_intervals
+    chave = ler_chave() if qual == "garmin" else ler_chave_intervals()
+    if not chave:
+        raise Erro(f"Não achei a chave '{qual}' no cofre deste computador.")
+    copiar_para_area_de_transferencia(chave)
+    print(f"Chave '{qual}' copiada ({len(chave)} caracteres). Cole-a no servidor com Ctrl+V ou botão direito "
+          "do mouse e depois rode: py garmin_painel.py --limpar-area")
+    return 0
+
+
 def nome_tailscale():
     """Nome do aparelho na rede Tailscale (ex.: painel-garmin.tail1234.ts.net) ou None."""
     import subprocess
@@ -826,6 +838,10 @@ def main(argv=None):
     p.add_argument("--guardar-chave-intervals", action="store_true",
                    help="guarda no cofre do Windows a chave do intervals.icu que você COPIOU (Ctrl+C); "
                         "ela não é mostrada nem digitada")
+    p.add_argument("--copiar-chave", choices=["garmin", "intervals"], metavar="garmin|intervals",
+                   help="copia a chave guardada no cofre do Windows para a área de transferência, SEM mostrá-la, "
+                        "para você colar no servidor (VPS). Depois limpe com --limpar-area")
+    p.add_argument("--limpar-area", action="store_true", help="limpa a área de transferência")
     p.add_argument("--testar-intervals", action="store_true",
                    help="testa a conexão com o intervals.icu (só leitura) e mostra quantos eventos vieram")
     p.add_argument("--esquecer-intervals", action="store_true",
@@ -917,6 +933,13 @@ def main(argv=None):
             return 0
         if a.restaurar_backup:
             return backup.restaurar(pasta_dados(), a.restaurar_backup, True)
+        if a.copiar_chave:
+            return copiar_chave(a.copiar_chave)
+        if a.limpar_area:
+            from cofre import limpar_area_de_transferencia
+            limpar_area_de_transferencia()
+            print("Área de transferência limpa.")
+            return 0
         if a.endereco:
             return mostrar_endereco()
         if a.guardar_chave_intervals:
