@@ -94,6 +94,29 @@ with tempfile.TemporaryDirectory() as pasta:
             if v is None: os.environ.pop(k, None)
             else: os.environ[k] = v
 
+# 4a) --enviar-chave: a chave só vai pela entrada padrão do ssh; destino estranho é recusado
+class Ret:
+    def __init__(self, rc): self.returncode = rc
+chamadas = []
+def falso(args, **kw): chamadas.append((args, kw)); return Ret(0 if kw.get("input") else 1)
+gp_ler0 = gp.ler_chave; gp.ler_chave = lambda: SEGREDO
+try:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf): assert gp.enviar_chave("garmin", "root@177.153.69.27", falso) == 0
+    args, kw = chamadas[-1]
+    assert args == ["ssh", "root@177.153.69.27", "bash /opt/painel-garmin/deploy/guardar_chave.sh garmin --stdin"], args
+    assert kw["input"] == (SEGREDO + "\n").encode() and SEGREDO not in " ".join(args) and SEGREDO not in buf.getvalue()
+    for ruim in (None, "", "177.153.69.27", "-oProxyCommand=x@y", "root@host;rm -rf /", "root@-oFoo", "a b@host", "root@host name", "@host", "root@"):
+        try: gp.enviar_chave("garmin", ruim, falso); raise SystemExit("deveria recusar " + str(ruim))
+        except gp.Erro: pass
+    assert len(chamadas) == 1, "destino recusado não chama o ssh"
+    try: gp.enviar_chave("garmin", "root@1.2.3.4", lambda a, **k: Ret(255)); raise SystemExit("falha do ssh deve virar erro")
+    except gp.Erro as e: assert SEGREDO not in str(e)
+finally:
+    gp.ler_chave = gp_ler0
+gk_ = open(os.path.join(RAIZ, "deploy", "guardar_chave.sh"), encoding="utf-8").read()
+assert '"${2:-}" = "--stdin"' in gk_ and "IFS= read -r K" in gk_
+
 # 4b) --copiar-chave: copia sem imprimir a chave; sem chave, erro claro
 import cofre as c_
 guardada = {}

@@ -10,8 +10,14 @@ case "${1:-}" in
   intervals) ID=intervals-icu-api-key ;;
   *) erro "use: guardar_chave.sh garmin   ou   guardar_chave.sh intervals" ;;
 esac
-read -r -s -p "Cole a chave ($1) e aperte Enter (nada aparece na tela): " K
-echo
+if [ "${2:-}" = "--stdin" ]; then
+  # a chave chega pela entrada padrão (enviada pelo programa do Windows via ssh): sem colar, sem tela
+  IFS= read -r K || true
+  K="${K%$'\r'}"
+else
+  read -r -s -p "Cole a chave ($1) e aperte Enter (nada aparece na tela): " K
+  echo
+fi
 if [ "${#K}" -lt 10 ]; then
   N="${#K}"; unset K
   erro "recebi só $N caracteres (a chave tem mais de 100). A colagem não chegou aqui. Nada foi guardado."

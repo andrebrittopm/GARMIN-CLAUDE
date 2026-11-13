@@ -733,6 +733,29 @@ def guardar_chave_intervals(pedir=None):
     return 0
 
 
+def enviar_chave(qual, destino, executar=None):
+    """Manda a chave do cofre para o guardar_chave.sh da VPS pela ENTRADA PADRÃO do ssh: ela não vai
+    na linha de comando, não passa pela área de transferência, não é impressa nem gravada em arquivo."""
+    import re
+    import subprocess
+    executar = executar or subprocess.run
+    if not destino or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,31}@[A-Za-z0-9][A-Za-z0-9.-]{0,252}", destino):
+        raise Erro("Informe o destino assim: --para root@177.153.69.27")
+    from cofre import ler_chave_intervals
+    chave = ler_chave() if qual == "garmin" else ler_chave_intervals()
+    if not chave:
+        raise Erro(f"Não achei a chave '{qual}' no cofre deste computador.")
+    print(f"Enviando a chave '{qual}' ({len(chave)} caracteres) para {destino}. O ssh vai pedir a senha da VPS.")
+    try:
+        r = executar(["ssh", destino, f"bash /opt/painel-garmin/deploy/guardar_chave.sh {qual} --stdin"],
+                     input=(chave + "\n").encode("utf-8"), timeout=180)
+    except (OSError, subprocess.SubprocessError):
+        raise Erro("Não consegui rodar o ssh neste computador.") from None
+    if r.returncode != 0:
+        raise Erro("A VPS não confirmou o recebimento da chave (veja a mensagem acima).")
+    return 0
+
+
 def copiar_chave(qual):
     """Copia a chave do cofre para a área de transferência. Imprime só o tamanho, nunca a chave."""
     from cofre import copiar_para_area_de_transferencia, ler_chave_intervals
@@ -842,6 +865,9 @@ def main(argv=None):
                    help="copia a chave guardada no cofre do Windows para a área de transferência, SEM mostrá-la, "
                         "para você colar no servidor (VPS). Depois limpe com --limpar-area")
     p.add_argument("--limpar-area", action="store_true", help="limpa a área de transferência")
+    p.add_argument("--enviar-chave", choices=["garmin", "intervals"], metavar="garmin|intervals",
+                   help="envia a chave do cofre do Windows direto para a VPS por ssh (sem copiar e colar); use com --para")
+    p.add_argument("--para", metavar="USUARIO@ENDERECO", help="com --enviar-chave: ex. root@177.153.69.27")
     p.add_argument("--testar-intervals", action="store_true",
                    help="testa a conexão com o intervals.icu (só leitura) e mostra quantos eventos vieram")
     p.add_argument("--esquecer-intervals", action="store_true",
@@ -933,6 +959,8 @@ def main(argv=None):
             return 0
         if a.restaurar_backup:
             return backup.restaurar(pasta_dados(), a.restaurar_backup, True)
+        if a.enviar_chave:
+            return enviar_chave(a.enviar_chave, a.para)
         if a.copiar_chave:
             return copiar_chave(a.copiar_chave)
         if a.limpar_area:
