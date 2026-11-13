@@ -185,4 +185,31 @@ with tempfile.TemporaryDirectory() as raiz:
 gk = open(os.path.join(D, "guardar_chave.sh"), encoding="utf-8").read()
 assert "ligar_credenciais.sh" in gk and "ligar_credenciais.sh" in inst and "ligar_credenciais.sh" in open(os.path.join(D, "atualizar_vps.sh"), encoding="utf-8").read()
 assert "read -r -s" in gk and "systemd-creds encrypt" in gk and "printf '%s' \"$K\"" in gk and "echo \"$K\"" not in gk
+# 6) instalar_fit.py: só PyPI por https, hash obrigatório, extração sem caminhos fora da pasta
+import importlib.util, zipfile as zf_
+espec = importlib.util.spec_from_file_location("instalar_fit", os.path.join(D, "instalar_fit.py")); fit = importlib.util.module_from_spec(espec); espec.loader.exec_module(fit)
+def sai(fn, *a):
+    try: fn(*a)
+    except SystemExit as e: return e.code
+    return None
+err_ = io.StringIO()
+with contextlib.redirect_stderr(err_):
+    assert sai(fit.baixar, "http://pypi.org/x") == 1 and sai(fit.baixar, "https://evil.com/x") == 1 and sai(fit.baixar, "https://pypi.org.evil.com/x") == 1
+    bom = io.BytesIO()
+    with zf_.ZipFile(bom, "w") as z: z.writestr("pacote/a.py", "x=1")
+    ruim = io.BytesIO()
+    with zf_.ZipFile(ruim, "w") as z: z.writestr("../fora.py", "x=1")
+    with tempfile.TemporaryDirectory() as d1:
+        dest = os.path.join(d1, "libs"); os.makedirs(dest)
+        assert sai(fit.extrair, ruim.getvalue(), dest) == 1 and not os.path.exists(os.path.join(d1, "fora.py"))
+        fit.extrair(bom.getvalue(), dest); assert open(os.path.join(dest, "pacote", "a.py")).read() == "x=1"
+    # hash que não confere: nada é instalado
+    with tempfile.TemporaryDirectory() as d2:
+        open(os.path.join(d2, "requirements-fit.txt"), "w").write("garmin-fit-sdk==1.0 \\\n    --hash=sha256:" + "a" * 64 + "\n")
+        meta = json.dumps({"urls": [{"filename": "x.whl", "url": "https://files.pythonhosted.org/x.whl", "digests": {"sha256": "a" * 64}}]}).encode()
+        fit.baixar = lambda url, limite=0: meta if url.endswith("/json") else b"conteudo-adulterado"
+        assert sai(fit.principal, d2) == 1 and not os.path.exists(os.path.join(d2, "libs", "garmin_fit_sdk"))
+        fit.baixar = lambda url, limite=0: json.dumps({"urls": [{"filename": "x.whl", "url": "https://files.pythonhosted.org/x.whl", "digests": {"sha256": "b" * 64}}]}).encode()
+        assert sai(fit.principal, d2) == 1, "sem arquivo com o hash esperado"
+assert "hash" in err_.getvalue() or "permitido" in err_.getvalue()
 print("TESTES DO MODO REMOTO PASSARAM")

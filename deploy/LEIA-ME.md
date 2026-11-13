@@ -28,6 +28,12 @@ bash /opt/painel-garmin/deploy/rodar.sh --diagnostico      # conferência geral
 ```
 A atualização automática roda às 01h, 07h, 13h e 19h (`systemctl list-timers painel-garmin-atualizar.timer`).
 
+## Rotas de GPS (opcional)
+```
+python3 /opt/painel-garmin/deploy/instalar_fit.py        # biblioteca oficial da Garmin, com hash conferido, só em /opt/painel-garmin/libs
+bash /opt/painel-garmin/deploy/rodar.sh --rotas --sem-abrir   # baixa os percursos (pode demorar alguns minutos)
+```
+
 ## Trazer seus dados do Windows (provas, perfil, fotos, plano, histórico)
 No Windows: `py garmin_painel.py --backup-pessoal --com-dados` e envie o ZIP para a pasta de dados da VPS:
 ```
