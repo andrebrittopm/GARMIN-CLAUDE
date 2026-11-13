@@ -838,4 +838,10 @@ linha ruim
 
     # 8) só GET nos dados; POST só no token; nenhum segredo no painel
     assert METODOS == [] or all(m == "GET" or p.endswith("/token") for m, p in METODOS)
+    # ids únicos e referências url(#id) válidas no painel final (degradê repetido deixava gráficos sem cor)
+    import re as re_
+    vivo_ = re_.sub(r"<template.*?</template>", "", painel(), flags=re_.S)
+    ids_ = re_.findall(r'\bid="([^"]+)"', vivo_)
+    assert len(ids_) == len(set(ids_)), sorted({i for i in ids_ if ids_.count(i) > 1})
+    assert set(re_.findall(r"url\(#([^)]+)\)", vivo_)) <= set(ids_), "url(#...) sem destino"
     print("TODOS OS TESTES PASSARAM")

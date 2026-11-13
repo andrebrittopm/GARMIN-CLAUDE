@@ -8,7 +8,9 @@ do sono e o dia de hoje / semana atual. Nenhum esporte usa essa cor.
 import contextlib
 import datetime as dt
 import html
+import itertools
 import math
+import re
 
 from arte import (arte_topo, arte_topo_real, foto_exemplo, perfil_elevacao_svg,
                   rota_real_svg, rotas_sobrepostas_svg, selo_iniciais)
@@ -182,7 +184,17 @@ def zonas(h, tips):
         f'height="{h - PT - 2}" data-tip="{esc(t)}"/>' for i, t in enumerate(tips))
 
 
+_N_SVG = itertools.count(1)
+
+
 def svg(h, corpo, rotulo, defs=""):
+    """Cada gráfico leva ids próprios nos degradês: com o mesmo id repetido (uma cópia por período
+    e por tamanho de tela) o navegador usa a primeira cópia, que pode estar escondida, e o gráfico
+    fica sem cor."""
+    n = next(_N_SVG)
+    for i in re.findall(r'\bid="([^"]+)"', defs):
+        defs = defs.replace(f'id="{i}"', f'id="{i}-{n}"').replace(f"url(#{i})", f"url(#{i}-{n})")
+        corpo = corpo.replace(f"url(#{i})", f"url(#{i}-{n})")
     return (f'<svg class="ch" viewBox="0 0 {W} {h}" role="img" '
             f'aria-label="{esc(rotulo)}"><defs>{defs}</defs>{corpo}</svg>')
 

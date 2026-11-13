@@ -125,6 +125,11 @@ with tempfile.TemporaryDirectory() as pasta:
                    'data-d="42"', "Previsão de hoje", "Meta da prova (41:30)", "ajustado ao relevo", "Equiv. 10 km", "abaixo de 5 km",
                    'class="z', "Riegel", "Riegel costuma dar"):
         assert trecho in pag, trecho
+    # ids únicos e referências válidas (um degradê com id repetido escondeu as barras do Body Battery)
+    corpo_vivo = re.sub(r"<template.*?</template>", "", pag, flags=re.S)
+    ids_ = re.findall(r'\bid="([^"]+)"', corpo_vivo)
+    assert len(ids_) == len(set(ids_)), sorted({i for i in ids_ if ids_.count(i) > 1})
+    assert set(re.findall(r"url\(#([^)]+)\)", corpo_vivo)) <= set(ids_), "url(#...) sem destino"
     assert pag.count('<details class="card sec') >= 6 and pag.count("</details>") == pag.count("<details") and 'id="btn-recolher"' in pag
     assert 'id="btn-tema"' in pag and "html[data-tema=claro] body" in pag and "@@" not in pag and pag.count("painel-tema") >= 3, "tema claro"
     assert pag.index("painel-tema") < pag.index("<main>"), "o tema é aplicado antes do corpo (sem piscar)"
