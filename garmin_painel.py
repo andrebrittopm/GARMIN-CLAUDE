@@ -42,6 +42,7 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import armazem  # noqa: E402
+import amigos  # noqa: E402
 import atualizador  # noqa: E402
 import backup  # noqa: E402
 import configuracao  # noqa: E402
@@ -57,6 +58,7 @@ from cofre import (ErroCofre, apagar_token_cache, gravar_token_cache,  # noqa: E
 from formatos import (MELHORES, SEM_DADO, hms, km, num, pace,  # noqa: E402
                       pace_de_velocidade, segunda)
 from visual import pagina  # noqa: E402
+import visual  # noqa: E402
 
 BASE = "https://personal.connectapi.garmin.com"
 TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
@@ -578,6 +580,22 @@ def montar_plano(pasta, historico, hoje):
         return None
 
 
+def gerar_amigos(dados, hoje, agora):
+    """Recria a página dos amigos, SÓ se o painel dos amigos estiver ligado (--amigos-ligar).
+    Usa apenas perfil, provas, recordes e conquistas; nunca recebe sono, rotas, calendário ou plano."""
+    pasta = pasta_dados()
+    if not amigos.ativo(pasta):
+        return False
+    historico = montar_atividades(armazem.todas_atividades(dados))
+    co = corredor.montar(pasta, historico, hoje, dados.get("cobertura_ini"))
+    if co is None or not co.get("perfil"):
+        print("AVISO: o painel dos amigos precisa do perfil.txt (nome); nada foi publicado.")
+        return False
+    amigos.salvar_pagina(pasta, visual.pagina_amigos(
+        co, visual.recordes(historico), plano.selos(None, historico, [], hoje), agora))
+    return True
+
+
 def gerar(dados, hoje, ini, agora, avisos, abrir):
     resumos, sonos, vfc, brutas, peso = armazem.recorte(dados, ini, hoje)
     ativ = montar_atividades(brutas)
@@ -601,6 +619,11 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
         f.write(pag)
     os.replace(tmp, caminho)
     print(f"Painel gerado: {caminho}")
+    try:
+        if gerar_amigos(dados, hoje, agora):
+            print("Painel dos amigos atualizado.")
+    except Exception as e:  # noqa: BLE001  (nunca derruba o painel principal)
+        print(f"AVISO: não consegui atualizar o painel dos amigos ({type(e).__name__}).")
     for nome in omitidos:
         print(f"AVISO: '{nome}' não aparece: sem dados no período "
               "(o relógio não mediu ou a Garmin não enviou).")
@@ -768,6 +791,36 @@ def copiar_chave(qual):
     return 0
 
 
+def comandos_amigos(a, dias_padrao=30):
+    pasta = pasta_dados()
+    if a.servir_amigos:
+        return amigos.servir(pasta, a.porta or 8766)
+    if a.amigos_desligar:
+        amigos.desligar(pasta)
+        print("Painel dos amigos desligado: link e página apagados.")
+        return 0
+    if a.amigos_endereco:
+        t = amigos.token(pasta)
+        if not t:
+            raise Erro("O painel dos amigos não está ligado. Rode: --amigos-ligar")
+        nome = os.environ.get("PAINEL_HOST") or nome_tailscale()
+        if not nome:
+            raise Erro("Não consegui descobrir o nome do Tailscale. Defina PAINEL_HOST=nome.rede.ts.net e rode de novo.")
+        print(f"https://{nome}:{os.environ.get('PAINEL_PORTA_AMIGOS', '10000')}/{t}/")
+        return 0
+    if a.amigos_novo_link:
+        amigos.novo_link(pasta)
+        print("Link trocado: o anterior deixou de funcionar. Veja o novo com --amigos-endereco.")
+    else:
+        amigos.ligar(pasta)
+        print("Painel dos amigos ligado.")
+    try:      # já publica a página com os dados guardados (sem consultar a Garmin)
+        redesenhar(dias_padrao, False)
+    except Erro as e:
+        print(f"AVISO: {e}")
+    return 0
+
+
 def nome_tailscale():
     """Nome do aparelho na rede Tailscale (ex.: painel-garmin.tail1234.ts.net) ou None."""
     import subprocess
@@ -865,6 +918,13 @@ def main(argv=None):
                    help="copia a chave guardada no cofre do Windows para a área de transferência, SEM mostrá-la, "
                         "para você colar no servidor (VPS). Depois limpe com --limpar-area")
     p.add_argument("--limpar-area", action="store_true", help="limpa a área de transferência")
+    p.add_argument("--amigos-ligar", action="store_true",
+                   help="liga o painel para amigos (página sem dados de saúde/GPS) e cria o link secreto")
+    p.add_argument("--amigos-novo-link", action="store_true", help="troca o link secreto (o antigo deixa de funcionar)")
+    p.add_argument("--amigos-desligar", action="store_true", help="apaga o link e a página dos amigos")
+    p.add_argument("--amigos-endereco", action="store_true", help="mostra o endereço público para enviar aos amigos")
+    p.add_argument("--servir-amigos", action="store_true",
+                   help="(VPS) serve só a página dos amigos em 127.0.0.1; use --porta (padrão 8766)")
     p.add_argument("--enviar-chave", choices=["garmin", "intervals"], metavar="garmin|intervals",
                    help="envia a chave do cofre do Windows direto para a VPS por ssh (sem copiar e colar); use com --para")
     p.add_argument("--para", metavar="USUARIO@ENDERECO", help="com --enviar-chave: ex. root@177.153.69.27")
@@ -959,6 +1019,8 @@ def main(argv=None):
             return 0
         if a.restaurar_backup:
             return backup.restaurar(pasta_dados(), a.restaurar_backup, True)
+        if a.amigos_ligar or a.amigos_novo_link or a.amigos_desligar or a.amigos_endereco or a.servir_amigos:
+            return comandos_amigos(a, dias_padrao=max(1, min(a.dias, 365)))
         if a.enviar_chave:
             return enviar_chave(a.enviar_chave, a.para)
         if a.copiar_chave:

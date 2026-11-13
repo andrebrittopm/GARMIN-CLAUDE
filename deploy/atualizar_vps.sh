@@ -10,10 +10,11 @@ principal() {      # tudo dentro de uma função: o bash lê o corpo inteiro ant
   git -c safe.directory=/opt/painel-garmin merge --ff-only FETCH_HEAD
   chown -R root:root /opt/painel-garmin
   chmod -R go-w /opt/painel-garmin
-  install -m 0644 deploy/painel-garmin.service deploy/painel-garmin-atualizar.service deploy/painel-garmin-atualizar.timer /etc/systemd/system/
+  install -m 0644 deploy/painel-garmin.service deploy/painel-garmin-atualizar.service deploy/painel-garmin-atualizar.timer deploy/painel-garmin-amigos.service /etc/systemd/system/
   bash deploy/ligar_credenciais.sh
   systemctl daemon-reload
   systemctl restart painel-garmin.service
+  if systemctl is-enabled painel-garmin-amigos.service >/dev/null 2>&1; then systemctl restart painel-garmin-amigos.service; fi
   echo "Programa atualizado: $(git -c safe.directory=/opt/painel-garmin rev-parse --short HEAD)"
 }
 principal "$@"

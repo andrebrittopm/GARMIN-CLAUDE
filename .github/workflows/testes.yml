@@ -32,6 +32,8 @@ jobs:
         run: python tests/test_links.py
       - name: Testes do modo remoto (VPS)
         run: python tests/test_remoto.py
+      - name: Testes do painel para amigos (privacidade)
+        run: python tests/test_amigos.py
 
   cofre-windows:
     # O cofre do Windows só existe no Windows. Se este teste falhar por limitação

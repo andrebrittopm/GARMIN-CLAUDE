@@ -1,0 +1,30 @@
+[Unit]
+Description=Painel Garmin para amigos (só a página sem dados sensíveis, por link secreto)
+After=network-online.target
+
+[Service]
+User=painel
+Group=painel
+WorkingDirectory=/opt/painel-garmin
+StateDirectory=painel-garmin
+StateDirectoryMode=0750
+Environment=GARMIN_PAINEL_PASTA_DADOS=/var/lib/painel-garmin
+Environment=PYTHONDONTWRITEBYTECODE=1
+# sem chaves: este serviço não tem acesso à Garmin nem ao intervals.icu
+ExecStart=/usr/bin/python3 /opt/painel-garmin/garmin_painel.py --servir-amigos --porta 8766
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

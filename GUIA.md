@@ -206,6 +206,11 @@ O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo ab
 O passo a passo está em `deploy/LEIA-ME.md`. Resumo: o painel roda num usuário comum da VPS, a chave fica criptografada
 pelo sistema e o acesso é só pelos seus aparelhos na rede Tailscale. Nenhuma porta nova fica aberta na internet.
 
+### Painel para amigos
+Uma versão **sem dados de saúde, sem GPS, sem calendário e sem plano**, só com seu perfil, totais, provas, recordes e
+conquistas, para você mandar o link a amigos. Veja `deploy/LEIA-ME.md` (ligar_amigos.sh). O link é longo e secreto;
+se vazar, troque com `--amigos-novo-link`. A página é gerada já sem os dados sensíveis (não é o painel completo escondido).
+
 ### Links do Strava e do Garmin Connect no topo
 Dois botões aparecem à direita do seu nome. Preencha em **✎ Provas e perfil > Perfil** (campos "Link do seu perfil...") ou
 no `perfil.txt`, com as linhas `strava: https://www.strava.com/athletes/SEU_NUMERO` e

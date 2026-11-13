@@ -28,7 +28,7 @@ systemd-creds setup >/dev/null 2>&1 || true
 
 echo "3/5 Serviços"
 install -m 0644 "$AQUI"/deploy/painel-garmin.service "$AQUI"/deploy/painel-garmin-atualizar.service \
-  "$AQUI"/deploy/painel-garmin-atualizar.timer /etc/systemd/system/
+  "$AQUI"/deploy/painel-garmin-atualizar.timer "$AQUI"/deploy/painel-garmin-amigos.service /etc/systemd/system/
 bash "$AQUI/deploy/ligar_credenciais.sh"
 systemctl daemon-reload
 systemctl enable --now painel-garmin.service

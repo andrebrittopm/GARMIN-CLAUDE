@@ -34,6 +34,17 @@ python3 /opt/painel-garmin/deploy/instalar_fit.py        # biblioteca oficial da
 bash /opt/painel-garmin/deploy/rodar.sh --rotas --sem-abrir   # baixa os percursos (pode demorar alguns minutos)
 ```
 
+## Painel para amigos (link público secreto)
+Uma página **sem** sono, frequência cardíaca, peso, rotas/GPS, calendário, plano e links; só perfil, totais, provas,
+recordes e conquistas. É gerada já sem esses dados. Ela não tem JavaScript e fica atrás de um link longo e secreto.
+```
+bash /opt/painel-garmin/deploy/ligar_amigos.sh       # liga, publica (Tailscale Funnel, porta 10000) e mostra o link
+bash /opt/painel-garmin/deploy/rodar.sh --amigos-endereco     # mostra o link de novo
+bash /opt/painel-garmin/deploy/rodar.sh --amigos-novo-link    # troca o link (o antigo para de funcionar)
+bash /opt/painel-garmin/deploy/desligar_amigos.sh    # tira do ar e apaga link e página
+```
+O Funnel precisa estar ativado na sua conta do Tailscale (o script mostra um link para ativar, se for o caso).
+
 ## Trazer seus dados do Windows (provas, perfil, fotos, plano, histórico)
 No Windows: `py garmin_painel.py --backup-pessoal --com-dados` e envie o ZIP para a pasta de dados da VPS:
 ```

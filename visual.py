@@ -844,6 +844,40 @@ def hero_html(co, agora, rotas_xy=None):
             f'{links}<div class="hero-stats">{hs}</div></div></header>')
 
 
+def _tabela_estatica(cabecalho, linhas):
+    h = "".join(f'<th class="{"e" if i in (0, 2) else ""}">{esc(c)}</th>' for i, c in enumerate(cabecalho))
+    corpo = "".join("<tr>" + "".join(f'<td class="{"e" if i in (0, 2) else ""}">{esc(x[0] if isinstance(x, tuple) else x)}</td>'
+                                     for i, x in enumerate(l)) + "</tr>" for l in linhas)
+    return f'<div class="tw"><table><thead><tr>{h}</tr></thead><tbody>{corpo}</tbody></table></div>'
+
+
+def pagina_amigos(co, recs, selos, agora):
+    """Página dos AMIGOS: sem JavaScript e sem nenhum dado de saúde, rota, calendário, plano ou link.
+    Recebe só o que pode aparecer (perfil, provas, recordes, selos); não recebe dias nem atividades."""
+    per = {**co["perfil"], "strava": "", "garmin": ""}
+    co2 = {**co, "perfil": per}
+    topo = hero_html(co2, agora, None).replace("{ini}", "").replace("{fim}", "")
+    topo = topo.replace("Período:  a  · atualizado em", "Atualizado em")
+    provas = provas_html(co2, None) if (co2["proximas"] or co2["feitas"]) else ""
+    rec = ""
+    if recs:
+        rec = ('<h2 class="t">Recordes pessoais — corridas</h2>' + medalhas_html(recs)
+               + _tabela_estatica(["Recorde", "Valor", "Detalhe", "Dia"], recs))
+    return f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>{esc(per["nome"])} — corridas</title><style>{CSS}{PLANO_CSS}</style></head>
+<body data-n="14"><main>
+{topo}
+{provas}
+{rec}
+{card_selos(selos)}
+<p class="nota">Painel de visualização das corridas. Os números vêm da Garmin; tempo e pace das provas são os da
+atividade registrada no dia e podem diferir do tempo oficial da organização.</p>
+</main></body></html>"""
+
+
 def _st(rotulo, valor):
     return (f'<div class="det-st"><div class="r">{esc(rotulo)}</div>'
             f'<div class="v{" sd" if valor == SEM_DADO else ""}">{esc(valor)}</div></div>')
