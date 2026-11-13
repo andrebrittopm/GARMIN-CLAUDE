@@ -12,7 +12,10 @@ case "${1:-}" in
 esac
 read -r -s -p "Cole a chave ($1) e aperte Enter (nada aparece na tela): " K
 echo
-[ "${#K}" -ge 10 ] || erro "isso não parece uma chave (muito curta). Nada foi guardado."
+if [ "${#K}" -lt 10 ]; then
+  N="${#K}"; unset K
+  erro "recebi só $N caracteres (a chave tem mais de 100). A colagem não chegou aqui. Nada foi guardado."
+fi
 case "$K" in *[[:space:]]*) erro "a chave não pode ter espaços. Nada foi guardado." ;; esac
 ARQ="/etc/credstore.encrypted/$ID.cred"
 install -d -m 0700 /etc/credstore.encrypted
