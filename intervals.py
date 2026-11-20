@@ -51,8 +51,12 @@ def _pedir(base, caminho, params, chave):
         with urllib.request.build_opener(_SemRedirecionar).open(req, timeout=30) as r:
             dados = r.read(LIMITE_RESPOSTA + 1)
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            raise ErroIntervals("O intervals.icu recusou a chave (confira se é a chave de API certa).") from None
+        if e.code == 401:
+            raise ErroIntervals("O intervals.icu recusou a chave (erro 401): ela está errada, foi trocada ou foi desativada. "
+                                "Gere uma nova em Settings > Developer Settings.") from None
+        if e.code == 403:
+            raise ErroIntervals("O intervals.icu negou o acesso (erro 403): a chave não vale para este atleta. Confira o número "
+                                "do atleta (--intervals-atleta) ou gere uma chave nova.") from None
         if e.code == 404:
             raise ErroIntervals("O intervals.icu não achou esse atleta (veja o número com --intervals-atleta).") from None
         raise ErroIntervals(f"O intervals.icu respondeu {e.code}.") from None
