@@ -40,6 +40,22 @@ class _SemRedirecionar(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _mensagem_do_site(e):
+    """Texto de explicação que o próprio intervals.icu devolve com o erro (até 160 caracteres, só texto simples).
+    Nunca contém a chave: ela só vai no cabeçalho do pedido. Vazio se não houver."""
+    try:
+        corpo = e.read(2000).decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return ""
+    try:
+        d = json.loads(corpo)
+        texto = " ".join(str(d.get(k)) for k in ("error", "message") if isinstance(d, dict) and d.get(k))
+    except ValueError:
+        texto = corpo if "<" not in corpo[:200] else ""
+    texto = " ".join("".join(c if c.isprintable() else " " for c in texto).split())[:160]
+    return f" Resposta do site: {texto}" if texto else ""
+
+
 def _pedir(base, caminho, params, chave):
     if not (base.startswith("https://intervals.icu") or base.startswith("http://127.0.0.1")):
         raise ErroIntervals("Endereço do intervals.icu não permitido.")
@@ -51,15 +67,16 @@ def _pedir(base, caminho, params, chave):
         with urllib.request.build_opener(_SemRedirecionar).open(req, timeout=30) as r:
             dados = r.read(LIMITE_RESPOSTA + 1)
     except urllib.error.HTTPError as e:
+        extra = _mensagem_do_site(e)
         if e.code == 401:
             raise ErroIntervals("O intervals.icu recusou a chave (erro 401): ela está errada, foi trocada ou foi desativada. "
-                                "Gere uma nova em Settings > Developer Settings.") from None
+                                "Gere uma nova em Settings > Developer Settings." + extra) from None
         if e.code == 403:
             raise ErroIntervals("O intervals.icu negou o acesso (erro 403): a chave não vale para este atleta. Confira o número "
-                                "do atleta (--intervals-atleta) ou gere uma chave nova.") from None
+                                "do atleta (--intervals-atleta) ou gere uma chave nova." + extra) from None
         if e.code == 404:
-            raise ErroIntervals("O intervals.icu não achou esse atleta (veja o número com --intervals-atleta).") from None
-        raise ErroIntervals(f"O intervals.icu respondeu {e.code}.") from None
+            raise ErroIntervals("O intervals.icu não achou esse atleta (veja o número com --intervals-atleta)." + extra) from None
+        raise ErroIntervals(f"O intervals.icu respondeu {e.code}." + extra) from None
     except urllib.error.URLError as e:
         raise ErroIntervals(f"Sem conexão com o intervals.icu ({type(e.reason).__name__}).") from None
     except OSError as e:

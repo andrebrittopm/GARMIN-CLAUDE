@@ -21,7 +21,8 @@ class H(BaseHTTPRequestHandler):
     def _r(self, m):
         VISTOS.append((m, self.path, self.headers.get("Authorization")))
         modo = ESTADO["modo"]
-        if modo == "401": return self._j(401, {})
+        if modo == "401": return self._j(401, {"message": "API key invalid or expired", "error": "Unauthorized"})
+        if modo == "500": return self._raw(500, b"<html>erro interno</html>")
         if modo == "403": return self._j(403, {})
         if modo == "404": return self._j(404, {})
         if modo == "302":
@@ -54,7 +55,8 @@ assert n[0] == {"data": "2026-11-12", "nome": "Rodagem <b>leve</b>", "categoria"
 assert "SEGREDO" not in json.dumps(n) and n[1]["categoria"] == "Anotação" and n[1]["dur_s"] is None
 
 # 3) erros: mensagens seguras, nunca com a chave
-for modo, trecho in (("401", "recusou a chave (erro 401)"), ("403", "negou o acesso (erro 403)"), ("404", "atleta"), ("302", "302"), ("grande", "maior que o permitido"),
+for modo, trecho in (("401", "Resposta do site: Unauthorized API key invalid or expired"), ("500", "respondeu 500."),
+                     ("401", "recusou a chave (erro 401)"), ("403", "negou o acesso (erro 403)"), ("404", "atleta"), ("302", "302"), ("grande", "maior que o permitido"),
                      ("lixo", "não entendi"), ("objeto", "não entendi")):
     ESTADO["modo"] = modo; VISTOS.clear()
     try: intervals.buscar(CHAVE, "0", HOJE, HOJE, BASE); raise SystemExit("deveria falhar: " + modo)
