@@ -20,7 +20,7 @@ else
 fi
 if [ "${#K}" -lt 10 ]; then
   N="${#K}"; unset K
-  erro "recebi só $N caracteres (a chave tem mais de 100). A colagem não chegou aqui. Nada foi guardado."
+  erro "recebi só $N caracteres (a chave da Garmin tem mais de 128 e a do intervals.icu cerca de 25). A colagem não chegou aqui. Nada foi guardado."
 fi
 case "$K" in *[[:space:]]*) erro "a chave não pode ter espaços. Nada foi guardado." ;; esac
 N_CARACTERES="${#K}"
