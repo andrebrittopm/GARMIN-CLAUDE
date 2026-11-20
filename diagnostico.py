@@ -6,6 +6,7 @@ usuário), só para provar que chave, token e internet funcionam; o conteúdo da
 resposta é descartado.
 """
 import datetime as dt
+import json
 import os
 import subprocess
 import sys
@@ -179,6 +180,18 @@ def executar():
         for unidade in ("painel-garmin.service", "painel-garmin-atualizar.timer"):
             r = subprocess.run(["systemctl", "is-active", unidade], capture_output=True, text=True)
             (ok if r.stdout.strip() == "active" else atencao)(f"{unidade}: {r.stdout.strip() or 'desconhecido'}")
+
+    # --- atualização automática do programa (VPS)
+    cam_auto = os.path.join(pasta, "autoatualizacao.json")
+    if os.path.exists(cam_auto):
+        try:
+            with open(cam_auto, encoding="utf-8") as f:
+                au = json.load(f)
+            quando = _idade(time.time() - os.path.getmtime(cam_auto))
+            txt = f"Atualização automática do programa há {quando}: {au.get('status')}" + (f" ({au.get('detalhe')})" if au.get("detalhe") else "")
+            (ok if au.get("status") in ("atualizado", "em-dia", "aguardando-testes") else atencao)(txt)
+        except (OSError, ValueError):
+            atencao("Não consegui ler o resultado da atualização automática do programa.")
 
     # --- tarefa agendada (Windows)
     if sys.platform == "win32":

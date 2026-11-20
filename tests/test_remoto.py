@@ -183,7 +183,7 @@ with tempfile.TemporaryDirectory() as raiz:
     os.remove(os.path.join(cs, "intervals-icu-api-key.cred")); ligar()
     assert not os.path.exists(conf("painel-garmin.service", "intervals-icu-api-key")) and os.path.exists(conf("painel-garmin.service", "garmin-personal-api-key"))
 gk = open(os.path.join(D, "guardar_chave.sh"), encoding="utf-8").read()
-assert "ligar_credenciais.sh" in gk and "ligar_credenciais.sh" in inst and "ligar_credenciais.sh" in open(os.path.join(D, "atualizar_vps.sh"), encoding="utf-8").read()
+assert "ligar_credenciais.sh" in gk and "ligar_credenciais.sh" in inst and "ligar_credenciais.sh" in open(os.path.join(D, "aplicar_vps.sh"), encoding="utf-8").read()
 assert "read -r -s" in gk and "systemd-creds encrypt" in gk and "printf '%s' \"$K\"" in gk and "echo \"$K\"" not in gk
 # 6) instalar_fit.py: só PyPI por https, hash obrigatório, extração sem caminhos fora da pasta
 import importlib.util, zipfile as zf_

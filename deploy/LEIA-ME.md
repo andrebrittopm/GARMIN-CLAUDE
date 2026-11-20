@@ -70,6 +70,28 @@ bash /opt/painel-garmin/deploy/atualizar_vps.sh
 ```
 Atualiza o código pelo GitHub e reinicia o painel. Dados e chaves não são tocados.
 
+### Atualização automática do programa (opcional, 2x por dia: 03h40 e 15h40)
+```
+bash /opt/painel-garmin/deploy/ligar_autoatualizacao.sh      # liga
+bash /opt/painel-garmin/deploy/desligar_autoatualizacao.sh   # desliga
+```
+Só aplica uma versão nova se (1) ela só avança a instalada, (2) os testes "Testes (Linux)" do GitHub dessa versão passaram,
+(3) todos os .py têm sintaxe válida e (4) o painel sobe depois da troca; se algo falhar, **volta sozinha** para a versão
+anterior. O resultado aparece no `--diagnostico`. O que for publicado no GitHub e passar nos testes passa a rodar na VPS
+sem você conferir: mantenha a verificação em duas etapas ligada na sua conta do GitHub.
+
+## Chave de automação (para um assistente operar a VPS com poderes limitados)
+Uma chave **sem passphrase**, guardada no seu computador, que só consegue pedir ações de uma lista fixa (`comando_remoto.sh`):
+`status`, `logs`, `diagnostico`, `atualizar-dados`, `atualizar-dados-rotas`, `atualizar-programa`, `amigos-modo basico|completo`,
+`amigos-desligar`. **Não dá terminal**, não mostra chaves da Garmin/intervals.icu nem o link dos amigos, e não aceita
+outros comandos ou argumentos. Instalar (no Windows):
+```
+ssh-keygen -t ed25519 -N '""' -C painel-automacao -f $env:USERPROFILE\.ssh\id_ed25519_painel_auto
+type $env:USERPROFILE\.ssh\id_ed25519_painel_auto.pub | ssh root@IP_DA_VPS "bash /opt/painel-garmin/deploy/instalar_chave_automacao.sh"
+```
+Usar: `ssh -i $env:USERPROFILE\.ssh\id_ed25519_painel_auto root@IP_DA_VPS status`. Revogar a qualquer momento:
+`bash /opt/painel-garmin/deploy/remover_chave_automacao.sh` (na VPS).
+
 ## Desligar
 ```
 tailscale serve reset

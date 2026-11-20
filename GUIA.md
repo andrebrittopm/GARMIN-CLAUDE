@@ -206,6 +206,11 @@ O painel lembra o que você deixou fechado neste navegador. Ao imprimir, tudo ab
 O passo a passo está em `deploy/LEIA-ME.md`. Resumo: o painel roda num usuário comum da VPS, a chave fica criptografada
 pelo sistema e o acesso é só pelos seus aparelhos na rede Tailscale. Nenhuma porta nova fica aberta na internet.
 
+### Atualização automática do programa e chave de automação (VPS)
+Na VPS, o programa pode se atualizar sozinho duas vezes por dia, **só** se os testes do GitHub passaram e **voltando atrás**
+sozinho se algo falhar. Também existe uma chave de automação, limitada a uma lista fixa de ações, para um assistente operar a
+VPS sem acesso livre ao `root`. Veja `deploy/LEIA-ME.md`.
+
 ### Painel para amigos
 Um link para mandar a amigos, em dois modos (`--amigos-modo basico|completo`):
 **básico** = uma versão **sem dados de saúde, sem GPS, sem calendário e sem plano**, só com perfil, totais, provas, recordes

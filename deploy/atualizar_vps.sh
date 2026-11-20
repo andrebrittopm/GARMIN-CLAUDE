@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Atualiza o PROGRAMA na VPS a partir do GitHub (seus dados e chaves não são tocados) e reinicia o painel.
+# Manual e sem a trava dos testes; a atualização automática (autoatualizar.py) confere os testes antes.
 set -euo pipefail
 
 principal() {      # tudo dentro de uma função: o bash lê o corpo inteiro antes de rodar, então
@@ -8,13 +9,7 @@ principal() {      # tudo dentro de uma função: o bash lê o corpo inteiro ant
   cd /opt/painel-garmin
   git -c safe.directory=/opt/painel-garmin fetch --quiet origin
   git -c safe.directory=/opt/painel-garmin merge --ff-only FETCH_HEAD
-  chown -R root:root /opt/painel-garmin
-  chmod -R go-w /opt/painel-garmin
-  install -m 0644 deploy/painel-garmin.service deploy/painel-garmin-atualizar.service deploy/painel-garmin-atualizar.timer deploy/painel-garmin-amigos.service /etc/systemd/system/
-  bash deploy/ligar_credenciais.sh
-  systemctl daemon-reload
-  systemctl restart painel-garmin.service
-  if systemctl is-enabled painel-garmin-amigos.service >/dev/null 2>&1; then systemctl restart painel-garmin-amigos.service; fi
+  bash deploy/aplicar_vps.sh
   echo "Programa atualizado: $(git -c safe.directory=/opt/painel-garmin rev-parse --short HEAD)"
 }
 principal "$@"

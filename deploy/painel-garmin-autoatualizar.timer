@@ -1,0 +1,11 @@
+[Unit]
+Description=Painel Garmin: procura versão nova do programa duas vezes por dia
+
+[Timer]
+# horário local da VPS (Campo Grande)
+OnCalendar=*-*-* 03:40,15:40
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

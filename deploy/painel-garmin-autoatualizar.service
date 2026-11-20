@@ -1,0 +1,9 @@
+[Unit]
+Description=Painel Garmin: atualiza o programa pelo GitHub (só se os testes passaram; volta atrás se falhar)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/painel-garmin/deploy/autoatualizar.py
+TimeoutStartSec=20min
