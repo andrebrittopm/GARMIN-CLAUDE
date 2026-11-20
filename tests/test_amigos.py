@@ -20,8 +20,10 @@ def dados_falsos():
     d = armazem.vazio()
     for i in range(0, 60):
         k = (HOJE - dt.timedelta(days=i)).isoformat()
-        d["resumos"][k] = {"calendarDate": k, "totalSteps": 88888, "restingHeartRate": 49, "minHeartRate": 41, "maxHeartRate": 166,
-                           "bodyBatteryHighestValue": 91, "bodyBatteryLowestValue": 13, "averageSpo2": 97, "averageStressLevel": 23}
+        d["resumos"][k] = {"calendarDate": k, "movement": {"steps": {"value": 88888, "goal": 7000}},
+                           "heartRate": {"restingValue": 49, "minValue": 41, "maxValue": 166},
+                           "bodyBattery": {"minValue": 13, "maxValue": 91}, "pulseOx": {"avgValue": 97}, "stress": {"avgLevel": 23},
+                           "hydration": {"consumedInFractionalMl": 1800, "goalInFractionalMl": 2500}}
         d["sonos"][k] = {"calendarDate": k, "sleepTimeSeconds": 27000, "deepSleepSeconds": 5000, "lightSleepSeconds": 15000, "remSleepSeconds": 4000}
         d["vfc"][k] = 68
     d.setdefault("peso", {})[HOJE.isoformat()] = 71.234
@@ -116,6 +118,63 @@ with tempfile.TemporaryDirectory() as pasta:
     amigos.ligar(pasta); os.remove(os.path.join(pasta, "perfil.txt")); buf = io.StringIO()
     with contextlib.redirect_stdout(buf): assert gp.gerar_amigos(dados, HOJE, agora) is False
     assert "precisa do perfil.txt" in buf.getvalue() and not os.path.exists(amigos.caminho_pagina(pasta))
+
+# 5b) modo COMPLETO: o painel inteiro, só para leitura (sem editar, sem atualizar, sem chaves)
+import re, shutil
+with tempfile.TemporaryDirectory() as pasta:
+    gp.PASTA_DADOS = pasta
+    open(os.path.join(pasta, "perfil.txt"), "w", encoding="utf-8").write(
+        f"nome: Ana Corredora\nstrava: {SEGREDOS['strava']}\ngarmin: {SEGREDOS['garmin']}\n")
+    open(os.path.join(pasta, "provas.txt"), "w", encoding="utf-8").write("2027-07-04; Maratona Futura; 10;\n")
+    open(os.path.join(pasta, "plano.json"), "w", encoding="utf-8").write(
+        '{"prova": {"nome": "Plano Secreto", "data": "2027-07-04", "dist_km": 10, "meta_min": 41.5}, "selos": {"equiv_10k_min": [41.5]}}')
+    open(os.path.join(pasta, "config_painel.json"), "w", encoding="utf-8").write('{"chave_vence": "2026-11-17"}')
+    dados = dados_falsos(); agora = dt.datetime(2026, 11, 12, 18, 0); ini = HOJE - dt.timedelta(days=29)
+    def gerar_tudo():
+        with contextlib.redirect_stdout(io.StringIO()): gp.gerar(dados, HOJE, ini, agora, ["aviso interno de teste"], False)
+    def publica(): return open(amigos.caminho_pagina(pasta), encoding="utf-8").read()
+    amigos.ligar(pasta); assert amigos.modo(pasta) == "basico"
+    gerar_tudo(); basico = publica()
+    assert not [p_ for p_ in proibido if p_ in basico], "o modo básico continua sem dados sensíveis"
+    dono = open(os.path.join(pasta, "painel.html"), encoding="utf-8").read()
+    assert 'id="btn-atualizar"' in dono and 'id="btn-editar"' in dono and "<!--EDITOR_CFG-->" in dono, "o SEU painel continua com os botões"
+    try: amigos.definir_modo(pasta, "tudo"); raise SystemExit("modo inválido")
+    except ValueError: pass
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf): rc = gp.main(["--amigos-modo", "completo", "--pasta-dados", pasta])
+    assert rc == 0 and "ATENÇÃO: modo COMPLETO" in buf.getvalue() and amigos.modo(pasta) == "completo"
+    gerar_tudo(); completo = publica()
+    for esperado in ("Sono por noite", "Body Battery", "Passos por dia", "Hidratação", "Peso (kg)", "Rumo à prova", "Plano de prova", "Atividades", "Dados diários",
+                     SEGREDOS["nome_atividade"], SEGREDOS["strava"], "Ana Corredora", "Maratona Futura", "Organizar", "Tema claro"):
+        assert esperado in completo, esperado
+    # nada que grave no servidor ou revele quem administra
+    for proibido_ro in ('id="btn-atualizar"', 'id="btn-editar"', 'id="editor"', 'id="atu-status"', "window.EDITOR", "<!--EDITOR_CFG-->", "X-Token", "/api/",
+                        "Atualizar agora", "Provas e perfil", "fetch(", "XMLHttpRequest", "aviso interno de teste", "vence em", "2026-11-17", "17/11/2026",
+                        amigos.token(pasta), "token_painel", "token_amigos"):
+        assert proibido_ro not in completo, proibido_ro
+    assert '<meta name="robots" content="noindex,nofollow,noarchive">' in completo
+    if shutil.which("node"):
+        for i, js in enumerate(re.findall(r"<script>(.*?)</script>", completo, re.S)):
+            arq = os.path.join(pasta, f"s{i}.js"); open(arq, "w", encoding="utf-8").write(js)
+            assert subprocess.run(["node", "--check", arq], capture_output=True).returncode == 0, i
+    corpo_vivo = re.sub(r"<template.*?</template>", "", completo, flags=re.S); ids_ = re.findall(r'\bid="([^"]+)"', corpo_vivo)
+    assert len(ids_) == len(set(ids_)), "ids únicos também na versão de leitura"
+    # servidor: no modo completo a CSP libera só o JavaScript da própria página; no básico continua sem script
+    httpd = amigos.criar(pasta, 18867); threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    def get(caminho):
+        c = http.client.HTTPConnection("127.0.0.1", 18867, timeout=5); c.request("GET", caminho); r = c.getresponse(); b = r.read().decode(); h = dict(r.getheaders()); c.close(); return r.status, b, h
+    try:
+        tk = amigos.token(pasta); st, corpo, h = get(f"/{tk}/")
+        assert st == 200 and "Sono por noite" in corpo and "script-src 'unsafe-inline'" in h["Content-Security-Policy"] and "connect-src" not in h["Content-Security-Policy"]
+        assert "default-src 'none'" in h["Content-Security-Policy"] and "img-src data: blob:" in h["Content-Security-Policy"]
+        assert get("/api/estado")[0] == 404 and get("/painel.html")[0] == 404
+        amigos.definir_modo(pasta, "basico"); assert "script-src" not in get(f"/{tk}/")[2]["Content-Security-Policy"]
+    finally:
+        httpd.shutdown(); httpd.server_close()
+    # voltar ao básico republica a página sem dados sensíveis
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf): assert gp.main(["--amigos-modo", "basico", "--pasta-dados", pasta]) == 0
+    gerar_tudo(); assert "Sono por noite" not in publica() and not [p_ for p_ in proibido if p_ in publica()]
 
 # 6) arquivos de instalação
 D = os.path.join(RAIZ, "deploy")

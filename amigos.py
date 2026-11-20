@@ -17,10 +17,17 @@ import stat
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+import configuracao
+
+MODOS = ("basico", "completo")
 ARQ_TOKEN = "token_amigos.txt"
 PASTA_PUBLICA = "publico"
 CSP = ("default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; "
        "form-action 'none'; frame-ancestors 'none'")
+# modo completo: o painel inteiro (só leitura) precisa de JavaScript da própria página (gráficos, abas),
+# mas continua sem poder buscar nada de lugar nenhum (connect-src herda 'none')
+CSP_COMPLETO = ("default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
 def _caminho_token(pasta):
@@ -39,6 +46,21 @@ def token(pasta):
     except OSError:
         return None
     return t if len(t) >= 30 and re.fullmatch(r"[A-Za-z0-9_-]+", t) else None
+
+
+def modo(pasta):
+    """"basico" (só corridas, sem dados sensíveis) ou "completo" (o painel inteiro, só leitura)."""
+    m = configuracao.carregar(pasta).get("amigos_modo")
+    return m if m in MODOS else "basico"
+
+
+def definir_modo(pasta, m):
+    if m not in MODOS:
+        raise ValueError("Modo inválido: use basico ou completo.")
+    d = configuracao.carregar(pasta)
+    d["amigos_modo"] = m
+    configuracao.salvar(pasta, d)
+    return m
 
 
 def ativo(pasta):
@@ -99,7 +121,8 @@ def _handler(pasta):
             self.send_response(codigo)
             for k, v in (("Content-Type", tipo), ("Content-Length", str(len(b))), ("Cache-Control", "no-store"),
                          ("X-Content-Type-Options", "nosniff"), ("Referrer-Policy", "no-referrer"),
-                         ("X-Robots-Tag", "noindex, nofollow, noarchive"), ("Content-Security-Policy", CSP)):
+                         ("X-Robots-Tag", "noindex, nofollow, noarchive"),
+                         ("Content-Security-Policy", CSP_COMPLETO if modo(pasta) == "completo" else CSP)):
                 self.send_header(k, v)
             self.end_headers()
             self.wfile.write(b)

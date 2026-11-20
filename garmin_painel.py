@@ -580,12 +580,18 @@ def montar_plano(pasta, historico, hoje):
         return None
 
 
-def gerar_amigos(dados, hoje, agora):
+def gerar_amigos(dados, hoje, agora, pagina_completa=None):
     """Recria a página dos amigos, SÓ se o painel dos amigos estiver ligado (--amigos-ligar).
-    Usa apenas perfil, provas, recordes e conquistas; nunca recebe sono, rotas, calendário ou plano."""
+    Modo "basico": usa apenas perfil, provas, recordes e conquistas; nunca recebe sono, rotas, calendário
+    ou plano. Modo "completo": publica o painel inteiro SÓ PARA LEITURA (`pagina_completa`)."""
     pasta = pasta_dados()
     if not amigos.ativo(pasta):
         return False
+    if amigos.modo(pasta) == "completo":
+        if pagina_completa is None:
+            return False
+        amigos.salvar_pagina(pasta, pagina_completa)
+        return True
     historico = montar_atividades(armazem.todas_atividades(dados))
     co = corredor.montar(pasta, historico, hoje, dados.get("cobertura_ini"))
     if co is None or not co.get("perfil"):
@@ -605,14 +611,17 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
     avisos = list(avisos) + (co["avisos"] if co else [])
     alerta = configuracao.alerta(pasta)
     venc = configuracao.vencimento(pasta)
-    pag, omitidos = pagina(montar_dias(resumos, sonos, vfc, peso), ativ, ini, hoje,
-                           agora, avisos, [alerta] if alerta else None,
-                           venc[0] if venc else None,
-                           historico=historico, metas=metas.progresso(pasta, historico, hoje),
-                           cobertura_ini=dados.get("cobertura_ini"), corredor=co,
-                           plano_info=montar_plano(pasta, historico, hoje),
-                           calendario=intervals.proximos(pasta, hoje),
-                           rotas=preparar_rotas(pasta, historico) if os.path.exists(rotas.caminho_rotas(pasta)) else None)
+    dias_painel = montar_dias(resumos, sonos, vfc, peso)
+    rotas_info = preparar_rotas(pasta, historico) if os.path.exists(rotas.caminho_rotas(pasta)) else None
+    comum = dict(historico=historico, metas=metas.progresso(pasta, historico, hoje),
+                 cobertura_ini=dados.get("cobertura_ini"), corredor=co, rotas=rotas_info,
+                 plano_info=montar_plano(pasta, historico, hoje), calendario=intervals.proximos(pasta, hoje))
+    pag, omitidos = pagina(dias_painel, ativ, ini, hoje, agora, avisos, [alerta] if alerta else None,
+                           venc[0] if venc else None, **comum)
+    pag_leitura = None
+    if amigos.ativo(pasta) and amigos.modo(pasta) == "completo":
+        # a mesma página, sem editar/atualizar, sem avisos internos e sem a data de vencimento da chave
+        pag_leitura, _ = pagina(dias_painel, ativ, ini, hoje, agora, None, None, None, somente_leitura=True, **comum)
     caminho = os.path.join(pasta, "painel.html")
     tmp = caminho + ".tmp"            # grava inteiro e só então troca: nunca fica pela metade
     with open(tmp, "w", encoding="utf-8") as f:
@@ -620,7 +629,7 @@ def gerar(dados, hoje, ini, agora, avisos, abrir):
     os.replace(tmp, caminho)
     print(f"Painel gerado: {caminho}")
     try:
-        if gerar_amigos(dados, hoje, agora):
+        if gerar_amigos(dados, hoje, agora, pag_leitura):
             print("Painel dos amigos atualizado.")
     except Exception as e:  # noqa: BLE001  (nunca derruba o painel principal)
         print(f"AVISO: não consegui atualizar o painel dos amigos ({type(e).__name__}).")
@@ -808,7 +817,17 @@ def comandos_amigos(a, dias_padrao=30):
             raise Erro("Não consegui descobrir o nome do Tailscale. Defina PAINEL_HOST=nome.rede.ts.net e rode de novo.")
         print(f"https://{nome}:{os.environ.get('PAINEL_PORTA_AMIGOS', '10000')}/{t}/")
         return 0
-    if a.amigos_novo_link:
+    if a.amigos_modo:
+        amigos.definir_modo(pasta, a.amigos_modo)
+        if a.amigos_modo == "completo":
+            print("ATENÇÃO: modo COMPLETO. Quem tiver o link verá TUDO o que você vê (sono, frequência cardíaca, peso, "
+                  "rotas de GPS, calendário, plano e links), só para leitura. Troque o link se ele vazar: --amigos-novo-link")
+        else:
+            print("Modo básico: só corridas, provas, recordes e conquistas (sem dados de saúde, GPS, calendário ou plano).")
+        if not amigos.ativo(pasta):
+            print("O painel dos amigos ainda está desligado. Para ligar: --amigos-ligar")
+            return 0
+    elif a.amigos_novo_link:
         amigos.novo_link(pasta)
         print("Link trocado: o anterior deixou de funcionar. Veja o novo com --amigos-endereco.")
     else:
@@ -921,6 +940,9 @@ def main(argv=None):
     p.add_argument("--amigos-ligar", action="store_true",
                    help="liga o painel para amigos (página sem dados de saúde/GPS) e cria o link secreto")
     p.add_argument("--amigos-novo-link", action="store_true", help="troca o link secreto (o antigo deixa de funcionar)")
+    p.add_argument("--amigos-modo", choices=list(amigos.MODOS), metavar="basico|completo",
+                   help="basico = só corridas, sem dados sensíveis; completo = o painel inteiro, SOMENTE LEITURA "
+                        "(saúde, rotas, calendário e plano ficam visíveis a quem tiver o link)")
     p.add_argument("--amigos-desligar", action="store_true", help="apaga o link e a página dos amigos")
     p.add_argument("--amigos-endereco", action="store_true", help="mostra o endereço público para enviar aos amigos")
     p.add_argument("--servir-amigos", action="store_true",
@@ -1019,7 +1041,8 @@ def main(argv=None):
             return 0
         if a.restaurar_backup:
             return backup.restaurar(pasta_dados(), a.restaurar_backup, True)
-        if a.amigos_ligar or a.amigos_novo_link or a.amigos_desligar or a.amigos_endereco or a.servir_amigos:
+        if (a.amigos_ligar or a.amigos_novo_link or a.amigos_desligar or a.amigos_endereco or a.servir_amigos
+                or a.amigos_modo):
             return comandos_amigos(a, dias_padrao=max(1, min(a.dias, 365)))
         if a.enviar_chave:
             return enviar_chave(a.enviar_chave, a.para)

@@ -1797,8 +1797,11 @@ document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' '
 
 def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_vence=None,
            historico=None, metas=None, cobertura_ini=None, corredor=None, rotas=None,
-           plano_info=None, calendario=None):
+           plano_info=None, calendario=None, somente_leitura=False):
     """Devolve (html, nomes_dos_gráficos_omitidos).
+
+    somente_leitura: versão para quem recebe o link (painel dos amigos em modo "completo"): a mesma
+    página, mas SEM o botão de atualizar, o editor de provas e perfil e o código que grava no servidor.
 
     alertas: faixas de destaque no topo (ex.: chave perto de vencer).
     chave_vence: data de vencimento da chave, só informativa, no rodapé.
@@ -1961,9 +1964,19 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
               + "".join(f'body[data-n="{n}"] .per.mob[data-n="{n}"]{{display:block}}' for n in opcoes if n in OPCOES_CEL)
               + '.seletor button[data-n="30"]{display:none}}')
 
+    btn_edicao = "" if somente_leitura else (
+        '<button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button>'
+        '<button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button>')
+    bloco_edicao = "" if somente_leitura else (
+        '<div class="faixa" id="atu-status" role="status" hidden><b>Atualização</b><span></span>'
+        '<button type="button" class="ed-btn" id="atu-fechar" hidden>Fechar</button></div>\n'
+        '<dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>')
+    marcador_edicao = "" if somente_leitura else "<!--EDITOR_CFG-->"
+    script_edicao = "" if somente_leitura else f"<script>{EDITOR_JS}</script>"
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{'<meta name="robots" content="noindex,nofollow,noarchive">' if somente_leitura else ''}
 <title>Painel Garmin</title><style>{CSS}{PLANO_CSS}{ORGANIZAR_CSS}{TEMA_CLARO.replace('@@', 'html[data-tema=claro]')}{regras}</style><script>{TEMA_HEAD_JS}</script></head>
 <body data-n="{padrao}" data-hoje="{hoje.isoformat()}" data-gerado="{agora.strftime('%Y-%m-%dT%H:%M:%S')}"><main>
 {cabecalho}
@@ -1971,9 +1984,8 @@ def pagina(dias, atividades, ini, fim, agora, avisos=None, alertas=None, chave_v
 {faixas}
 <div class="grid">{kpis}</div>
 <div class="seletor" role="group" aria-label="Período dos gráficos e das tabelas diárias">
-<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-organizar" class="btn-editar">⇅ Organizar</button><button type="button" id="btn-tema" class="btn-editar" aria-pressed="false">☀ Tema claro</button><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button><button type="button" id="btn-atualizar" class="btn-editar">↻ Atualizar agora</button><button type="button" id="btn-editar" class="btn-editar">✎ Provas e perfil</button></span></div>
-<div class="faixa" id="atu-status" role="status" hidden><b>Atualização</b><span></span><button type="button" class="ed-btn" id="atu-fechar" hidden>Fechar</button></div>
-<dialog id="editor" aria-labelledby="ed-t"><div class="ed-box"></div></dialog>
+<span>Período:</span>{botoes}<span class="btn-grupo"><button type="button" id="btn-organizar" class="btn-editar">⇅ Organizar</button><button type="button" id="btn-tema" class="btn-editar" aria-pressed="false">☀ Tema claro</button><button type="button" id="btn-recolher" class="btn-editar" aria-expanded="true">▴ Recolher tudo</button>{btn_edicao}</span></div>
+{bloco_edicao}
 <dialog id="organizar" aria-labelledby="org-t"><div class="ed-box"><div class="ed-top"><h2 id="org-t">Organizar o painel</h2>
 <button type="button" class="ed-btn" id="org-fechar">Fechar</button></div>
 <p class="sub">Use ▲ e ▼ (ou arraste pelo ⠿) para mudar a ordem. Desmarque “mostrar” para esconder um bloco. A página muda na hora e o painel lembra a sua escolha neste navegador.</p>
@@ -1994,4 +2006,4 @@ da semana (segunda a domingo). Pace e porcentagens são contas feitas com a dist
 tempo enviados pela Garmin; “melhores esforços” são os tempos mais rápidos que a Garmin
 registrou para cada distância dentro de uma corrida; os recordes usam todo o histórico guardado. “Descanso” = nenhuma atividade
 registrada naquele dia. Clique no título de uma coluna para ordenar.{esc(rodape_chave)}</p>
-</main>{detalhe_dialog}<div id="tip"></div><!--EDITOR_CFG--><script>{JS}</script><script>{EDITOR_JS}</script><script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script><script>{TEMA_JS}</script><script>{ORGANIZAR_JS}</script></body></html>""", omitidos
+</main>{detalhe_dialog}<div id="tip"></div>{marcador_edicao}<script>{JS}</script>{script_edicao}<script>{DETALHE_JS}</script><script>{PLANO_JS}</script><script>{SECOES_JS}</script><script>{TEMA_JS}</script><script>{ORGANIZAR_JS}</script></body></html>""", omitidos

@@ -207,8 +207,10 @@ O passo a passo está em `deploy/LEIA-ME.md`. Resumo: o painel roda num usuário
 pelo sistema e o acesso é só pelos seus aparelhos na rede Tailscale. Nenhuma porta nova fica aberta na internet.
 
 ### Painel para amigos
-Uma versão **sem dados de saúde, sem GPS, sem calendário e sem plano**, só com seu perfil, totais, provas, recordes e
-conquistas, para você mandar o link a amigos. Veja `deploy/LEIA-ME.md` (ligar_amigos.sh). O link é longo e secreto;
+Um link para mandar a amigos, em dois modos (`--amigos-modo basico|completo`):
+**básico** = uma versão **sem dados de saúde, sem GPS, sem calendário e sem plano**, só com perfil, totais, provas, recordes
+e conquistas; **completo** = o painel inteiro **somente leitura** (quem tem o link vê tudo o que você vê, mas não edita
+nada nem usa suas chaves). Veja `deploy/LEIA-ME.md` (ligar_amigos.sh). O link é longo e secreto;
 se vazar, troque com `--amigos-novo-link`. A página é gerada já sem os dados sensíveis (não é o painel completo escondido).
 
 ### Links do Strava e do Garmin Connect no topo

@@ -35,12 +35,18 @@ bash /opt/painel-garmin/deploy/rodar.sh --rotas --sem-abrir   # baixa os percurs
 ```
 
 ## Painel para amigos (link público secreto)
-Uma página **sem** sono, frequência cardíaca, peso, rotas/GPS, calendário, plano e links; só perfil, totais, provas,
-recordes e conquistas. É gerada já sem esses dados. Ela não tem JavaScript e fica atrás de um link longo e secreto.
+**Modo básico (padrão):** uma página **sem** sono, frequência cardíaca, peso, rotas/GPS, calendário, plano e links; só
+perfil, totais, provas, recordes e conquistas. É gerada já sem esses dados, não tem JavaScript e fica atrás de um link
+longo e secreto.
+**Modo completo:** o painel inteiro, **somente leitura** (sem editar, sem "Atualizar agora", sem chaves), no mesmo link.
+Quem tiver o link vê tudo o que você vê, inclusive saúde, rotas de GPS (com o corte de privacidade do início e do fim),
+calendário, plano e seus links.
 ```
 bash /opt/painel-garmin/deploy/ligar_amigos.sh       # liga, publica (Tailscale Funnel, porta 10000) e mostra o link
 bash /opt/painel-garmin/deploy/rodar.sh --amigos-endereco     # mostra o link de novo
 bash /opt/painel-garmin/deploy/rodar.sh --amigos-novo-link    # troca o link (o antigo para de funcionar)
+bash /opt/painel-garmin/deploy/rodar.sh --amigos-modo completo   # quem tem o link vê TUDO o que você vê, só leitura
+bash /opt/painel-garmin/deploy/rodar.sh --amigos-modo basico     # volta ao padrão (só corridas, sem dados sensíveis)
 bash /opt/painel-garmin/deploy/desligar_amigos.sh    # tira do ar e apaga link e página
 ```
 O Funnel precisa estar ativado na sua conta do Tailscale (o script mostra um link para ativar, se for o caso).
