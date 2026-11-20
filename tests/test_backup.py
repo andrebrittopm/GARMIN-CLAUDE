@@ -78,6 +78,6 @@ with tempfile.TemporaryDirectory() as pasta:
         with contextlib.redirect_stdout(buf): rc = gp.main(["--backup-pessoal", "--pasta-dados", vazia])
         assert rc == 1 and "ERRO" in buf.getvalue()
     # rodízio: só os 10 mais recentes (por último, porque apaga os mais antigos)
-    for i in range(12): backup.criar(pasta, agora=dt.datetime(2026, 11, 13, 10, 0, i))
-    z_ = sorted(os.listdir(os.path.join(pasta, "backups_pessoais"))); assert len(z_) == 10 and z_[-1].startswith("pessoal-20261113-100011")
+    for i in range(12): backup.criar(pasta, agora=dt.datetime(2099, 1, 1, 10, 0, i))      # data futura: independe de "hoje"
+    z_ = sorted(os.listdir(os.path.join(pasta, "backups_pessoais"))); assert len(z_) == 10 and z_[-1].startswith("pessoal-20990101-100011") and z_[0].startswith("pessoal-20990101-100002"), z_
 print("TESTES DO BACKUP PASSARAM")
