@@ -23,11 +23,16 @@ if [ "${#K}" -lt 10 ]; then
   erro "recebi só $N caracteres (a chave tem mais de 100). A colagem não chegou aqui. Nada foi guardado."
 fi
 case "$K" in *[[:space:]]*) erro "a chave não pode ter espaços. Nada foi guardado." ;; esac
+N_CARACTERES="${#K}"
 ARQ="/etc/credstore.encrypted/$ID.cred"
 install -d -m 0700 /etc/credstore.encrypted
 printf '%s' "$K" | systemd-creds encrypt --name="$ID" - "$ARQ" || { unset K; erro "não consegui criptografar."; }
 unset K
 chmod 0600 "$ARQ"
 systemd-creds decrypt --name="$ID" "$ARQ" - >/dev/null 2>&1 || erro "a chave foi gravada, mas não consegui abrir de volta."
-echo "OK: chave '$1' guardada criptografada em $ARQ ($(stat -c %s "$ARQ") bytes)."
+echo "OK: chave '$1' guardada criptografada em $ARQ ($(stat -c %s "$ARQ") bytes; ${N_CARACTERES} caracteres na chave)."
+case "$1" in
+  intervals) echo "Dica: a chave de API do intervals.icu costuma ter cerca de 25 caracteres. Se o número acima for bem diferente, a colagem pegou outro texto." ;;
+  garmin) echo "Dica: a chave da Garmin tem mais de 128 caracteres." ;;
+esac
 bash "$(dirname "${BASH_SOURCE[0]}")/ligar_credenciais.sh"
